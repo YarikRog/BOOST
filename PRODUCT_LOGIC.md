@@ -194,6 +194,8 @@ confirmation_success_rate = Σ(outcome_weights) / N_responses
 
 So 10/10 successes outranks 80/100 successes, exactly as intended. `EXPIRED` is "no signal": it is neither a positive nor a negative — crucially it stays **out of the denominator** too, otherwise it would silently behave like a partial fail and drag good lifehacks down just because some users went quiet. These weights feed `confirmation_success_rate` in the Section 5 formula — they are **not** a separate cumulative score.
 
+**EXPIRED = operational silence (hard rule).** Not a negative signal, not a neutral signal, not part of the rating system at all — it means "data not collected", nothing more. Including it in the denominator is a classic recommendation-system bug: it would penalize low-retention populations and turn the metric into a measure of *activity* rather than *quality* ("rot from silence"). EXPIRED **may** be tracked separately as an engagement/retention metric (e.g. response rate, how often users follow through) — but that lives entirely outside the score and never touches `quality_score`.
+
 ### 11d. Event-driven, not manually managed
 
 The whole lifecycle is event/trigger driven (publish, take-into-work, check-event, confirm, decay) — there is no human "quality manager" step anywhere. The one retention dependency is the delayed check: if users don't return, confirmations stall. Mitigation is the batched bot reminder / summary ("у тебе 2 кейси очікують результат"), Section 4 — and the `EXPIRED` state ensures stalled work-items self-clear instead of blocking slots.
