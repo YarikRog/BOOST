@@ -61,13 +61,22 @@ A lifehack is **structured data, not a free-text post**:
 - If matches found: non-blocking prompt — "Схоже, така ідея вже є" with options "Переглянути схожі" / "Все одно опублікувати".
 - AI-based similarity is Layer 2.
 
-## 4. Confirmation, not rating (Layer 1)
+## 4. Confirmation is the truth signal; likes are a secondary, weighted signal (Layer 1)
 
-- No 👍/👎 like buttons.
-- Action verbs only:
+Both exist, but they are not equal — confirmation is what actually determines score and lifecycle stage. Likes are a lightweight signal that helps sorting (especially during cold start) but are deliberately weakened against gaming.
+
+### Confirmation (primary signal)
+- Action verbs, not opinions:
   - `📌 Беру в роботу` (take into work)
   - After delay (~7 days): `🔥 Допомогло` / `😐 Частково` / `❌ Не допомогло`
-- These actions are the only signal that affects a lifehack's score.
+- This is the only signal that drives lifecycle status (Section 5) and the core score.
+
+### Likes (secondary signal, cross-store only)
+- `👍` / `👎` buttons exist, shown immediately under every lifehack, no friction.
+- **Anti-cronyism rule:** a like/dislike only counts toward score if the person liking is from a **different store** than the lifehack's author (snapshot: author's store at publish time vs liker's store at like time — not recalculated if either transfers later). Same-store likes are still recorded and shown in the visible counter, but flagged `counts_toward_score = false` and excluded from ranking weight.
+- Rationale: without this, coworkers in the same store would reflexively mass-like each other's posts, turning the like count into a popularity-within-store metric instead of a real cross-store signal.
+- `REGIONAL_IT_LEAD` / `MEGA_ADMIN` have no store_id — their likes always count (never "same store" as any author).
+- The cross-store rule applies only to 👍/👎. Confirmation actions (📌/🔥/😐/❌) are unaffected — they reflect one person's own real experience, not a group vote, so no filtering is needed there.
 
 ### Active-work limit
 - Max 3–5 lifehacks "in progress" (awaiting confirmation) per user at a time.
@@ -75,7 +84,7 @@ A lifehack is **structured data, not a free-text post**:
 - Delayed-feedback reminders are batched into a single message ("У тебе є 3 лайфхаки, за якими ми ще чекаємо результат"), never one notification per lifehack.
 
 ### Anti-abuse
-- One `user_id` + `lifehack_id` = at most one active confirmation vote (DB unique constraint). Prevents single-user vote stacking.
+- One `user_id` + `lifehack_id` = at most one active confirmation vote, and at most one like/dislike (DB unique constraints). Prevents single-user vote stacking.
 
 ## 5. Lifecycle status (Layer 1 — automatic, no human moderation)
 
@@ -92,9 +101,9 @@ Archived   → score decay / sustained negative ratio
 
 Computed **per category** (IT_SERVICE and HAPPY_SERVICE evolve independently — don't gate one category's algorithm stage on the other's volume).
 
-- **Stage 1** (until ~200 lifehacks/category): 90% newest, 10% random. Goal: fill the base.
-- **Stage 2** (~200–1000): 40% new / 40% popular / 20% random.
-- **Stage 3** (1000+): full score — confirmations taken, success ratio, recency decay.
+- **Stage 1** (until ~200 lifehacks/category): 90% newest, 10% random. Goal: fill the base. Cross-store likes can break ties but confirmation data is too sparse to weight meaningfully yet.
+- **Stage 2** (~200–1000): 40% new / 40% popular / 20% random. "Popular" = cross-store like rate + early confirmation rate.
+- **Stage 3** (1000+): full score — confirmations taken (📌), success ratio (🔥/😐/❌), cross-store like rate (👍/👎, same-store excluded), recency decay. Confirmation signal dominates the weighting; likes remain a minor modifier, never the primary driver.
 
 ## 7. Comments (Layer 1 — controlled vocabulary, no free text)
 
