@@ -148,7 +148,55 @@ No personal leaderboard / point-chasing rating of people. Rating belongs to life
 - MVP: filter by category + product type (structured fields), not full-text/semantic.
 - Situational search ("клієнт каже X" → matching lifehacks) is explicitly **Layer 2**.
 
-## 11. Explicitly deferred to Layer 2 (do not build now)
+## 11. State machine (Layer 1 — the "physics" of the system)
+
+There are **two separate state machines**, not one. Conflating them is a modeling bug (a lifehack can be "in work" for one user and brand new for another at the same instant).
+
+### 11a. Lifehack entity (one per lifehack)
+
+```
+DRAFT → PUBLISHED → ARCHIVED
+```
+
+- `DRAFT` — author filling the form; not visible to anyone else; no interactions possible.
+- `PUBLISHED` — visible in feed, open to all interactions. The quality **tier** (New / Growing / Top, Section 6) is a *derived label within* PUBLISHED, not a separate stored workflow state.
+- `ARCHIVED` — `quality_score` stays below threshold (sustained, not one dip), or sustained negative results, or long inactivity. Never hard-deleted (Section 1). An archived lifehack leaves the active feed but is retained.
+
+### 11b. Work-item (one per `user × lifehack` — the engagement, not the lifehack)
+
+```
+IN_WORK → SUCCESS | PARTIAL | FAIL | EXPIRED
+```
+
+- `IN_WORK` — created when user taps `📌 Беру в роботу`. Records `user_id`, `lifehack_id`, `started_at`. Counts against that user's active-work limit (Section 4).
+- After ~7 days a `WORK_CHECK_EVENT` fires → bot asks for the result.
+- Terminal states:
+  - `SUCCESS` 🔥 ("допомогло")
+  - `PARTIAL` 😐 ("частково")
+  - `FAIL` ❌ ("не спрацювало")
+  - `EXPIRED` — no response within 7 days of the check prompt (~14 days total). Frees the slot; excluded from success-rate math (neither positive nor negative). See Section 4 auto-expiry.
+- Guard: at most one **active** (`IN_WORK`) work-item per `(user_id, lifehack_id)`. Re-taking is allowed only after the previous one reached a terminal state.
+
+### 11c. How work-items feed the score
+
+Each terminal confirmation contributes a per-outcome weight, but the lifehack's quality is a **rate, not a running sum** (consistent with Section 5 — avoids volume beating quality):
+
+```
+SUCCESS  → +1.0
+PARTIAL  → +0.3
+FAIL     → -0.5
+EXPIRED  → not counted
+
+confirmation_success_rate = Σ(outcome_weights) / N_confirmations
+```
+
+So 10/10 successes outranks 80/100 successes, exactly as intended. These weights feed `confirmation_success_rate` in the Section 5 formula — they are **not** a separate cumulative score.
+
+### 11d. Event-driven, not manually managed
+
+The whole lifecycle is event/trigger driven (publish, take-into-work, check-event, confirm, decay) — there is no human "quality manager" step anywhere. The one retention dependency is the delayed check: if users don't return, confirmations stall. Mitigation is the batched bot reminder / summary ("у тебе 2 кейси очікують результат"), Section 4 — and the `EXPIRED` state ensures stalled work-items self-clear instead of blocking slots.
+
+## 12. Explicitly deferred to Layer 2 (do not build now)
 
 - Situational model / tagging clients' objections as first-class taxonomy
 - AI-based content classification and auto-tagging
