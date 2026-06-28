@@ -165,9 +165,10 @@ DRAFT → PUBLISHED → ARCHIVED
 ### 11b. Work-item (one per `user × lifehack` — the engagement, not the lifehack)
 
 ```
-IN_WORK → SUCCESS | PARTIAL | FAIL | EXPIRED
+NONE → IN_WORK → SUCCESS | PARTIAL | FAIL | EXPIRED
 ```
 
+- `NONE` — no work-item exists yet for this user×lifehack (the default, not a stored row).
 - `IN_WORK` — created when user taps `📌 Беру в роботу`. Records `user_id`, `lifehack_id`, `started_at`. Counts against that user's active-work limit (Section 4).
 - After ~7 days a `WORK_CHECK_EVENT` fires → bot asks for the result.
 - Terminal states:
@@ -185,12 +186,13 @@ Each terminal confirmation contributes a per-outcome weight, but the lifehack's 
 SUCCESS  → +1.0
 PARTIAL  → +0.3
 FAIL     → -0.5
-EXPIRED  → not counted
+EXPIRED  → excluded entirely (numerator AND denominator)
 
-confirmation_success_rate = Σ(outcome_weights) / N_confirmations
+N_responses = count(SUCCESS) + count(PARTIAL) + count(FAIL)   # EXPIRED not included
+confirmation_success_rate = Σ(outcome_weights) / N_responses
 ```
 
-So 10/10 successes outranks 80/100 successes, exactly as intended. These weights feed `confirmation_success_rate` in the Section 5 formula — they are **not** a separate cumulative score.
+So 10/10 successes outranks 80/100 successes, exactly as intended. `EXPIRED` is "no signal": it is neither a positive nor a negative — crucially it stays **out of the denominator** too, otherwise it would silently behave like a partial fail and drag good lifehacks down just because some users went quiet. These weights feed `confirmation_success_rate` in the Section 5 formula — they are **not** a separate cumulative score.
 
 ### 11d. Event-driven, not manually managed
 
