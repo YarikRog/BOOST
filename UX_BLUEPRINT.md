@@ -105,6 +105,7 @@ Button behavior by work-item state (the SAME card renders differently):
 | `NONE` | `👍` `👎` + `📌 Беру в роботу` |
 | `IN_WORK` | `👍` `👎` + badge "📌 В роботі" + `Закрити достроково` |
 | `SUCCESS/PARTIAL/FAIL` | `👍` `👎` + small result chip (🔥/😐/❌), `📌` re-enabled (can re-take) |
+| `NOT_TRIED` | `👍` `👎` + `📌 Беру в роботу` (slot freed; user can re-take) |
 | `EXPIRED` | `👍` `👎` + `📌 Беру в роботу` (slot was freed) |
 
 - `👍/👎` are always available, never gated by work-item state. They only affect the weighted like-rate (Section 4), not the entity state.
@@ -115,9 +116,10 @@ Button behavior by work-item state (the SAME card renders differently):
 ```
 ~7 days after IN_WORK, bot pushes:
 [N1] "Ти пробував кейс «<title>»? Чи спрацювало?"
-        [ 🔥 Так, продав ] [ 😐 Частково ] [ ❌ Ні ]
+        [ 🔥 Так, продав ] [ 😐 Частково ] [ ❌ Ні ] [ ⏭ Не пробував ]
    ▼
-   tap → work-item → SUCCESS / PARTIAL / FAIL, slot freed, feeds success-rate
+   tap 🔥/😐/❌ → SUCCESS / PARTIAL / FAIL, slot freed, feeds success-rate
+   tap ⏭       → NOT_TRIED, slot freed, rating-excluded (response, not silence)
    no tap within 7 more days → EXPIRED (slot freed, no signal; Section 11c)
 ```
 
@@ -142,6 +144,9 @@ Closing one early → that work-item resolves (counts toward success-rate), free
 ```
 ┌────────────────────────────────┐
 │ 🏪 <store>      <role>          │
+│                                 │
+│ 📌 В роботі (X) ───────────────▶│  ← active work-items, only if X>0
+│                                 │
 │ [ IT_SERVICE | HAPPY_SERVICE ]  │  ← category tabs
 ├────────────────────────────────┤
 │ <lifehack cards, ranked by      │
@@ -152,6 +157,7 @@ Closing one early → that work-item resolves (counts toward success-rate), free
    ( + Додати кейс )  floating
 ```
 
+- `📌 В роботі (X)` is a single entry-point row that surfaces the count of active (`IN_WORK`) work-items; tapping opens the active-work list (same list as the limit-interrupt sheet [L1]). Hidden when X=0 so it never adds noise to a clean feed.
 - Empty state (cold start / Stage 1): "Ще немає кейсів — додай перший" + the `+` button.
 - Loading: skeleton cards.
 - Ranking and tier badges are read-only reflections of the score model; the UI never lets a user set a tier.
@@ -183,8 +189,9 @@ Exactly three facts (Section 9), no leaderboard:
 | Lifehack tier NEW/GROWING/TOP | derived badge on card (read-only) |
 | Lifehack `ARCHIVED` | drops out of active feed; still reachable via author profile |
 | Work-item `NONE` | `📌 Беру в роботу` active |
-| Work-item `IN_WORK` | "В роботі" badge + close-early |
+| Work-item `IN_WORK` | "В роботі" badge + close-early; counted in HOME `В роботі (X)` |
 | Work-item `SUCCESS/PARTIAL/FAIL` | result chip + re-take allowed |
-| Work-item `EXPIRED` | reverts card to `📌` available |
+| Work-item `NOT_TRIED` | reverts card to `📌` available (rating-excluded) |
+| Work-item `EXPIRED` | reverts card to `📌` available (rating-excluded) |
 
 Anything not in this table is out of MVP scope.

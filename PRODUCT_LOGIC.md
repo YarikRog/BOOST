@@ -68,8 +68,9 @@ Both exist, but they are not equal — confirmation is what actually determines 
 ### Confirmation (primary signal)
 - Action verbs, not opinions:
   - `📌 Беру в роботу` (take into work)
-  - After delay (~7 days): `🔥 Допомогло` / `😐 Частково` / `❌ Не допомогло`
-- This is the only signal that drives lifecycle status (Section 5) and the core score.
+  - After delay (~7 days): `🔥 Допомогло` / `😐 Частково` / `❌ Не допомогло` / `⏭ Не пробував`
+- `⏭ Не пробував` (`NOT_TRIED`) is an honest escape hatch: the user took it into work but never actually applied it. It is a real *response* (unlike silence/EXPIRED), but it carries **no quality signal** — excluded from success-rate math exactly like EXPIRED. Without it, an honest "didn't get to it" would be forced into `❌ Не допомогло`, poisoning the quality signal with a false negative (a FAIL from someone who never tried it).
+- The first three (🔥/😐/❌) are the only outcomes that drive lifecycle status (Section 5) and the core score.
 
 ### Likes (secondary signal, store-weighted)
 - `👍` / `👎` buttons exist, shown immediately under every lifehack, no friction.
@@ -165,17 +166,19 @@ DRAFT → PUBLISHED → ARCHIVED
 ### 11b. Work-item (one per `user × lifehack` — the engagement, not the lifehack)
 
 ```
-NONE → IN_WORK → SUCCESS | PARTIAL | FAIL | EXPIRED
+NONE → IN_WORK → SUCCESS | PARTIAL | FAIL | NOT_TRIED | EXPIRED
 ```
 
 - `NONE` — no work-item exists yet for this user×lifehack (the default, not a stored row).
 - `IN_WORK` — created when user taps `📌 Беру в роботу`. Records `user_id`, `lifehack_id`, `started_at`. Counts against that user's active-work limit (Section 4).
 - After ~7 days a `WORK_CHECK_EVENT` fires → bot asks for the result.
 - Terminal states:
-  - `SUCCESS` 🔥 ("допомогло")
-  - `PARTIAL` 😐 ("частково")
-  - `FAIL` ❌ ("не спрацювало")
-  - `EXPIRED` — no response within 7 days of the check prompt (~14 days total). Frees the slot; excluded from success-rate math (neither positive nor negative). See Section 4 auto-expiry.
+  - `SUCCESS` 🔥 ("допомогло") — scored
+  - `PARTIAL` 😐 ("частково") — scored
+  - `FAIL` ❌ ("не спрацювало") — scored
+  - `NOT_TRIED` ⏭ ("не пробував") — user actively responded but never applied it. A *response*, but **rating-excluded** (no quality signal).
+  - `EXPIRED` — no response at all within 7 days of the check prompt (~14 days total). Silence, not a response. Also **rating-excluded**. See Section 4 auto-expiry.
+- `NOT_TRIED` vs `EXPIRED`: identical in scoring (both excluded), distinct in engagement analytics — `NOT_TRIED` is a deliberate answer, `EXPIRED` is non-response. Both free the active-work slot.
 - Guard: at most one **active** (`IN_WORK`) work-item per `(user_id, lifehack_id)`. Re-taking is allowed only after the previous one reached a terminal state.
 
 ### 11c. How work-items feed the score
@@ -183,12 +186,13 @@ NONE → IN_WORK → SUCCESS | PARTIAL | FAIL | EXPIRED
 Each terminal confirmation contributes a per-outcome weight, but the lifehack's quality is a **rate, not a running sum** (consistent with Section 5 — avoids volume beating quality):
 
 ```
-SUCCESS  → +1.0
-PARTIAL  → +0.3
-FAIL     → -0.5
-EXPIRED  → excluded entirely (numerator AND denominator)
+SUCCESS    → +1.0
+PARTIAL    → +0.3
+FAIL       → -0.5
+NOT_TRIED  → excluded entirely (numerator AND denominator)
+EXPIRED    → excluded entirely (numerator AND denominator)
 
-N_responses = count(SUCCESS) + count(PARTIAL) + count(FAIL)   # EXPIRED not included
+N_responses = count(SUCCESS) + count(PARTIAL) + count(FAIL)   # NOT_TRIED and EXPIRED not included
 confirmation_success_rate = Σ(outcome_weights) / N_responses
 ```
 
