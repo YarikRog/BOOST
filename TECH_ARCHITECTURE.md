@@ -112,20 +112,22 @@ CREATE UNIQUE INDEX uniq_active_workitem
 
 ### reactions  (likes/dislikes)
 ```
-id                 uuid pk
-user_id            uuid fk → users
-lifehack_id        uuid fk → lifehacks
-type               reaction_type
-same_store_at_time boolean   -- SNAPSHOT: was liker's store == author_store_id at like time?
-created_at         timestamptz
+id                    uuid pk
+user_id               uuid fk → users
+lifehack_id           uuid fk → lifehacks
+type                  reaction_type
+author_store_id_snap  uuid     -- SNAPSHOT: lifehack.author_store_id at like time
+user_store_id_snap    uuid     -- SNAPSHOT: liker's store_id at like time (null for MEGA_ADMIN / REGIONAL_IT_LEAD)
+is_cross_store        boolean  -- derived & frozen at like time: user_store_id_snap != author_store_id_snap
+created_at            timestamptz
 ```
 Constraints:
 ```
 -- one reaction per user per lifehack (no vote stacking; flipping like↔dislike updates the row)
 CREATE UNIQUE INDEX uniq_reaction ON reactions (user_id, lifehack_id);
 ```
-- Weight is derived from `same_store_at_time`: `false → 1.0`, `true → 0.25` (Section 4 of product logic). MEGA_ADMIN / REGIONAL_IT_LEAD have no store → `same_store_at_time = false`.
-- `same_store_at_time` is frozen at like time; later transfers never recompute it.
+- Weight is derived from `is_cross_store`: `true → 1.0`, `false → 0.25` (Section 4 of product logic). MEGA_ADMIN / REGIONAL_IT_LEAD have no store → `user_store_id_snap = null` → `is_cross_store = true` → weight `1.0`.
+- All three snapshot fields are frozen at like time; later transfers of either party never recompute them. Storing both raw store IDs (not just the flag) keeps the weighting auditable and recomputable.
 
 ## 3. API design
 
