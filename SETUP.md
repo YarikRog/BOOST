@@ -51,13 +51,15 @@ Railway  ──runs──►  backend (API + bot + workers)  ──► Supabase 
 3. Add the environment variables (Service → Variables):
    ```
    TELEGRAM_BOT_TOKEN=...
+   BOT_USERNAME=               # bot username without @ (for invite deep links)
    SUPABASE_URL=...
    SUPABASE_SERVICE_ROLE_KEY=...
    DATABASE_URL=...
    REDIS_URL=...
    PORT=3000
    NODE_ENV=production
-   WEBAPP_URL=            # fill once the Mini App is deployed
+   WEBAPP_URL=                 # fill once the Mini App is deployed
+   BOOTSTRAP_ADMIN_TELEGRAM_ID=  # your Telegram numeric id, to seed the first admin
    ```
 4. Deploy. On boot it runs migrations, then starts API + bot (long-polling) + workers.
 
@@ -68,12 +70,19 @@ Railway  ──runs──►  backend (API + bot + workers)  ──► Supabase 
 ## 5. Smoke test
 
 - Railway logs show: `Backend listening on :3000` and `Bot @yourbot started (long-polling)`.
-- Message the bot `/start` → it replies with the "доступ лише для співробітників" text
-  (expected — the invite flow is the next build step).
 - `npm run migrate` log shows `apply 0001_init.sql` once, `skip` thereafter.
+- Set `BOOTSTRAP_ADMIN_TELEGRAM_ID` to your Telegram id, send the bot `/start` →
+  it creates you as MEGA_ADMIN and walks you through phone + experience onboarding.
+- Without a bootstrap match and no token, `/start` replies "доступ лише для співробітників".
 
 ## What's wired vs next
 
-Wired: backend boots, migrations apply, bot connects, workers sweep, Redis/Supabase clients.
-Next build step: **auth + invites** (Telegram `initData` validation, `/start <token>` consume,
-onboarding) — that's what turns `/start` into a real user.
+Wired: backend boots, migrations apply, bot connects, workers sweep, Redis/Supabase clients,
+**Flow 1** — invites (create with role hierarchy + consume), Telegram `initData` validation,
+onboarding (phone → experience → store for DIRECTOR), first-admin bootstrap.
+
+Next build steps:
+- WebApp (Mini App) — feed, view, create, profile screens against the existing API.
+- Staged feed ranking (replace "newest" with Stage 1/2/3 per category).
+- Reaction endpoint + folding likes into `quality_score`.
+- Bot delayed-feedback prompts (batched) wired to the reminder sweep.

@@ -5,6 +5,9 @@ import { IntegrationsModule } from './integrations/integrations.module';
 import { ScoringModule } from './services/scoring.module';
 import { WorkItemsModule } from './services/work-items.module';
 import { LifehacksModule } from './services/lifehacks.module';
+import { UsersModule } from './services/users.module';
+import { InvitesModule } from './services/invites.module';
+import { AuthModule } from './auth/auth.module';
 import { WorkersModule } from './workers/workers.module';
 import { BotModule } from './bot/bot.module';
 
@@ -14,6 +17,9 @@ import { BotModule } from './bot/bot.module';
     ScheduleModule.forRoot(), // drives the sweep workers (Postgres is the clock)
     IntegrationsModule, // global: SupabaseService + RedisService
     ScoringModule,
+    UsersModule,
+    AuthModule,
+    InvitesModule,
     WorkItemsModule,
     LifehacksModule,
     WorkersModule,
