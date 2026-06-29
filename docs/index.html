@@ -31,10 +31,13 @@
   }
   .phone{
     width:100%;max-width:412px;height:860px;max-height:92vh;background:var(--screen-bg);
+    color:var(--ink);
     border-radius:34px;overflow:hidden;position:relative;display:flex;flex-direction:column;
     box-shadow:0 30px 80px rgba(2,8,23,.55),0 0 0 10px #0c1424,0 0 0 11px #1e2a3e;
-    transition:background .25s;
+    transition:background .25s,color .25s;
   }
+  /* headings explicitly track the theme ink (defensive against inherited computed color) */
+  .phone h2,.phone h3,.phone h4,.store .meta b,.stat b,.sheet h4{color:var(--ink)}
   /* top bar */
   .topbar{background:var(--surface);padding:14px 18px 12px;border-bottom:1px solid var(--line);
     flex-shrink:0;display:flex;align-items:center;justify-content:space-between;transition:background .25s}
