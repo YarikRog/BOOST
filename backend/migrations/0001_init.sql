@@ -13,7 +13,8 @@ create extension if not exists "pgcrypto";  -- gen_random_uuid()
 create type user_role       as enum ('MEGA_ADMIN', 'REGIONAL_IT_LEAD', 'DIRECTOR', 'DEP_DIRECTOR', 'SELLER');
 create type user_status      as enum ('active', 'inactive', 'archived');
 create type experience       as enum ('lt_6m', '6m_2y', 'gt_2y');
-create type category         as enum ('IT_SERVICE', 'HAPPY_SERVICE');
+-- categories are DATA, not an enum (white-label: each client deploy seeds its own
+-- verticals — see 0002_seed_categories.sql). The product logic is category-agnostic.
 create type lifehack_status  as enum ('draft', 'published', 'archived');
 -- NOTE: NEW/GROWING/TOP are NOT here — tier is derived, never stored (TECH_ARCHITECTURE §4).
 create type workitem_status  as enum ('in_work', 'success', 'partial', 'fail', 'not_tried', 'expired');
@@ -28,6 +29,15 @@ create type invite_status    as enum ('active', 'used', 'revoked');
 create table regions (
   id    uuid primary key default gen_random_uuid(),
   name  text not null
+);
+
+-- Lifehack verticals. Replaces the old hardcoded enum — configured per deploy.
+create table categories (
+  id          uuid primary key default gen_random_uuid(),
+  slug        text unique not null,   -- stable key used by API/feed cache
+  name        text not null,          -- display label
+  sort_order  int not null default 0,
+  active      boolean not null default true
 );
 
 create table stores (
@@ -67,7 +77,7 @@ create table lifehacks (
   id               uuid primary key default gen_random_uuid(),
   author_id        uuid not null,
   author_store_id  uuid,                  -- SNAPSHOT at publish time (cross-store like logic)
-  category         category not null,
+  category_id      uuid not null,
   product_type     text not null,
   title            text not null,
   content_json     jsonb not null,
@@ -112,6 +122,7 @@ alter table invites     add constraint fk_invites_creator  foreign key (created_
 alter table invites     add constraint fk_invites_used_by  foreign key (used_by)     references users(id);
 alter table lifehacks   add constraint fk_lifehacks_author foreign key (author_id)   references users(id);
 alter table lifehacks   add constraint fk_lifehacks_store  foreign key (author_store_id) references stores(id);
+alter table lifehacks   add constraint fk_lifehacks_category foreign key (category_id) references categories(id);
 alter table work_items  add constraint fk_workitems_user   foreign key (user_id)     references users(id);
 alter table work_items  add constraint fk_workitems_life   foreign key (lifehack_id) references lifehacks(id);
 alter table reactions   add constraint fk_reactions_user   foreign key (user_id)     references users(id);
@@ -135,5 +146,5 @@ create unique index uniq_reaction
 -- ─────────────────────────────────────────────────────────────
 create index idx_workitems_check  on work_items (check_due_at) where status = 'in_work' and check_sent = false;
 create index idx_workitems_expiry on work_items (expires_at)   where status = 'in_work';
-create index idx_lifehacks_feed   on lifehacks (category, status);
+create index idx_lifehacks_feed   on lifehacks (category_id, status);
 create index idx_workitems_scoring on work_items (lifehack_id, status);

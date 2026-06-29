@@ -5,6 +5,7 @@ import { IntegrationsModule } from './integrations/integrations.module';
 import { ScoringModule } from './services/scoring.module';
 import { WorkItemsModule } from './services/work-items.module';
 import { LifehacksModule } from './services/lifehacks.module';
+import { CategoriesModule } from './services/categories.module';
 import { UsersModule } from './services/users.module';
 import { InvitesModule } from './services/invites.module';
 import { AuthModule } from './auth/auth.module';
@@ -22,6 +23,7 @@ import { BotModule } from './bot/bot.module';
     InvitesModule,
     WorkItemsModule,
     LifehacksModule,
+    CategoriesModule,
     WorkersModule,
     BotModule,
   ],

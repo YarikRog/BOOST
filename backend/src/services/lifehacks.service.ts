@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { SupabaseService } from '../integrations/supabase.client';
 import { RedisService } from '../integrations/redis.client';
 import { ScoringService } from './scoring.service';
-import { Category, Experience, LifehackStatus, WorkItemStatus } from '../common/enums';
+import { Experience, LifehackStatus, WorkItemStatus } from '../common/enums';
 
 type Audience = 'newcomer' | 'experienced';
 
@@ -22,23 +22,23 @@ export class LifehacksService {
     return segment === Experience.lt_6m ? 'newcomer' : 'experienced';
   }
 
-  /** GET /lifehacks/feed?category= — cached by category+audience (STACK.md §4). */
-  async feed(category: Category, audience: Audience): Promise<unknown[]> {
-    const cached = await this.redis.getFeed(category, audience);
+  /** GET /lifehacks/feed?categoryId= — cached by category+audience (STACK.md §4). */
+  async feed(categoryId: string, audience: Audience): Promise<unknown[]> {
+    const cached = await this.redis.getFeed(categoryId, audience);
     if (cached) return JSON.parse(cached);
 
     // TODO: staged ranking (Stage 1/2/3, per category). Skeleton: newest first.
     const { data, error } = await this.supabase.db
       .from('lifehacks')
-      .select('id, title, category, product_type, author_id, created_at')
-      .eq('category', category)
+      .select('id, title, category_id, product_type, author_id, created_at')
+      .eq('category_id', categoryId)
       .eq('status', LifehackStatus.published)
       .order('created_at', { ascending: false })
       .limit(50);
     if (error) throw error;
 
     const feed = data ?? [];
-    await this.redis.setFeed(category, audience, JSON.stringify(feed));
+    await this.redis.setFeed(categoryId, audience, JSON.stringify(feed));
     return feed;
   }
 

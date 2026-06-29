@@ -26,7 +26,7 @@ Enums:
 user_role      = MEGA_ADMIN | REGIONAL_IT_LEAD | DIRECTOR | DEP_DIRECTOR | SELLER
 user_status    = active | inactive | archived
 experience     = lt_6m | 6m_2y | gt_2y
-category        = IT_SERVICE | HAPPY_SERVICE
+-- categories are DATA (table below), not an enum — white-label: each deploy seeds its own verticals
 lifehack_status = draft | published | archived        -- NOTE: NEW/GROWING/TOP are NOT here (see §4)
 workitem_status = in_work | success | partial | fail | not_tried | expired
 reaction_type   = like | dislike
@@ -38,6 +38,18 @@ invite_status   = active | used | revoked
 id            uuid pk
 name          text
 ```
+
+### categories  (white-label: configured per deploy, not hardcoded)
+```
+id          uuid pk
+slug        text unique   -- stable key used by API + feed cache
+name        text          -- display label
+sort_order  int
+active      boolean
+```
+- Replaces the old hardcoded category enum. The whole system is category-agnostic;
+  swapping `categories` rows retargets the product to any retail vertical (Comfy seed
+  lives in migration `0002_seed_categories.sql`). This is the "box per chain" lever.
 
 ### stores
 ```
@@ -80,7 +92,7 @@ expires_at   timestamptz
 id                  uuid pk
 author_id           uuid fk → users
 author_store_id     uuid fk → stores   -- SNAPSHOT at publish time (for cross-store like logic)
-category            category
+category_id         uuid fk → categories
 product_type        text
 title               text
 content_json        jsonb              -- structured body (fast = single field; pro = full)

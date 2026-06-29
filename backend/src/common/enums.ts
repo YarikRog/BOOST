@@ -20,10 +20,8 @@ export enum Experience {
   gt_2y = 'gt_2y',
 }
 
-export enum Category {
-  IT_SERVICE = 'IT_SERVICE',
-  HAPPY_SERVICE = 'HAPPY_SERVICE',
-}
+// Categories are DATA (see `categories` table), not an enum — the product is
+// category-agnostic so the same deploy works for any retail vertical.
 
 export enum LifehackStatus {
   draft = 'draft',
