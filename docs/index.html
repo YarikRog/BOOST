@@ -6,11 +6,21 @@
 <meta name="theme-color" content="#0f172a" />
 <title>Comfy Knowledge — прототип</title>
 <style>
+  /* ---- LIGHT (default) ---- */
   :root{
-    --bg:#0b1220; --card:#ffffff; --ink:#0f172a; --muted:#64748b;
+    --screen-bg:#f6f8fb; --surface:#ffffff; --ink:#0f172a; --muted:#64748b;
     --line:#e7ebf0; --accent:#2563eb; --accent-soft:#eff4ff;
-    --good:#16a34a; --good-soft:#e9f9ef; --warn:#d97706; --bad:#dc2626;
-    --chip:#f1f5f9;
+    --good:#16a34a; --good-ink:#15803d; --good-soft:#e9f9ef; --good-bar:#cdeed8;
+    --warn:#d97706; --bad:#dc2626; --chip:#f1f5f9; --neutral-soft:#f1f5f9;
+    --shadow:0 2px 10px rgba(15,23,42,.04);
+  }
+  /* ---- DARK ---- */
+  .phone.dark{
+    --screen-bg:#0e1726; --surface:#18232f; --ink:#e6edf6; --muted:#8b9bb1;
+    --line:#283648; --accent:#3b82f6; --accent-soft:#172741;
+    --good:#34d399; --good-ink:#6ee7b7; --good-soft:#10261d; --good-bar:#1f5138;
+    --warn:#fbbf24; --bad:#f87171; --chip:#1f2c3c; --neutral-soft:#1c2735;
+    --shadow:0 2px 12px rgba(0,0,0,.3);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;padding:0}
@@ -20,25 +30,27 @@
     display:flex;align-items:center;justify-content:center;padding:24px;color:var(--ink);
   }
   .phone{
-    width:100%;max-width:412px;height:860px;max-height:92vh;background:#f6f8fb;
+    width:100%;max-width:412px;height:860px;max-height:92vh;background:var(--screen-bg);
     border-radius:34px;overflow:hidden;position:relative;display:flex;flex-direction:column;
     box-shadow:0 30px 80px rgba(2,8,23,.55),0 0 0 10px #0c1424,0 0 0 11px #1e2a3e;
+    transition:background .25s;
   }
   /* top bar */
-  .topbar{background:#fff;padding:14px 18px 12px;border-bottom:1px solid var(--line);flex-shrink:0}
+  .topbar{background:var(--surface);padding:14px 18px 12px;border-bottom:1px solid var(--line);
+    flex-shrink:0;display:flex;align-items:center;justify-content:space-between;transition:background .25s}
   .store{display:flex;align-items:center;gap:10px}
   .store .logo{width:34px;height:34px;border-radius:10px;background:var(--accent);color:#fff;
     display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px}
   .store .meta{line-height:1.25}
   .store .meta b{font-size:15px}
   .store .meta span{display:block;font-size:12px;color:var(--muted)}
+  .theme-btn{width:38px;height:38px;border-radius:11px;border:1px solid var(--line);background:var(--screen-bg);
+    font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 
-  /* scroll area */
   .screen{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
   .screen::-webkit-scrollbar{display:none}
   .pad{padding:14px 16px 90px}
 
-  /* in-work banner */
   .inwork{margin:14px 16px 0;background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;
     border-radius:16px;padding:13px 15px;display:flex;align-items:center;justify-content:space-between;
     box-shadow:0 8px 22px rgba(37,99,235,.35);cursor:pointer}
@@ -49,42 +61,41 @@
   .inwork small{display:block;opacity:.85;font-size:12px}
   .inwork .arr{opacity:.8}
 
-  /* tabs */
-  .tabs{display:flex;gap:8px;padding:14px 16px 4px;position:sticky;top:0;background:#f6f8fb;z-index:5}
+  .tabs{display:flex;gap:8px;padding:14px 16px 4px;position:sticky;top:0;background:var(--screen-bg);z-index:5}
   .tab{flex:1;text-align:center;padding:9px;border-radius:11px;font-size:13px;font-weight:600;
-    background:#fff;color:var(--muted);border:1px solid var(--line);cursor:pointer}
-  .tab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+    background:var(--surface);color:var(--muted);border:1px solid var(--line);cursor:pointer}
+  .tab.on{background:var(--ink);color:var(--screen-bg);border-color:var(--ink)}
 
-  /* lifehack card */
-  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px;
-    margin-top:12px;box-shadow:0 2px 10px rgba(15,23,42,.04);cursor:pointer;transition:transform .08s}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:15px;
+    margin-top:12px;box-shadow:var(--shadow);cursor:pointer;transition:transform .08s,background .25s}
   .card:active{transform:scale(.99)}
-  .card .cat{font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-soft);
+  .cat{font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-soft);
     display:inline-block;padding:3px 9px;border-radius:20px;letter-spacing:.3px}
   .card .tier{float:right;font-size:11px;font-weight:700;color:var(--muted)}
   .card h3{margin:10px 0 5px;font-size:16.5px;line-height:1.3}
   .card .sub{font-size:13px;color:var(--muted);margin-bottom:12px}
-  /* the hero: social proof of RESULT, not likes */
   .proof{display:flex;align-items:center;gap:12px;background:var(--good-soft);
     border-radius:13px;padding:10px 12px;margin-bottom:12px}
+  .proof.neutral{background:var(--neutral-soft)}
   .proof .big{font-size:21px;font-weight:800;color:var(--good);line-height:1}
-  .proof .txt{font-size:12.5px;color:#15803d;line-height:1.3}
-  .proof .bar{flex:1;height:7px;background:#cdeed8;border-radius:6px;overflow:hidden;min-width:48px}
+  .proof .txt{font-size:12.5px;color:var(--good-ink);line-height:1.3}
+  .proof.neutral .txt{color:var(--muted)}
+  .proof .bar{flex:1;height:7px;background:var(--good-bar);border-radius:6px;overflow:hidden;min-width:48px}
   .proof .bar i{display:block;height:100%;background:var(--good);border-radius:6px}
   .card .foot{display:flex;align-items:center;justify-content:space-between;margin-top:4px}
   .card .who{font-size:12px;color:var(--muted)}
   .react{display:flex;gap:6px}
-  .react button{border:1px solid var(--line);background:#fff;border-radius:10px;padding:6px 10px;
+  .react button{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:6px 10px;
     font-size:13px;cursor:pointer;color:var(--muted)}
   .react button.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 
-  .take{width:100%;margin-top:12px;background:var(--ink);color:#fff;border:none;border-radius:13px;
+  .take{width:100%;margin-top:12px;background:var(--ink);color:var(--screen-bg);border:none;border-radius:13px;
     padding:13px;font-size:14.5px;font-weight:700;cursor:pointer}
   .take.taken{background:var(--good-soft);color:var(--good)}
 
-  /* bottom nav */
-  .nav{position:absolute;bottom:0;left:0;right:0;height:72px;background:#fff;border-top:1px solid var(--line);
-    display:flex;align-items:center;justify-content:space-around;padding-bottom:6px}
+  .nav{position:absolute;bottom:0;left:0;right:0;height:72px;background:var(--surface);
+    border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-around;
+    padding-bottom:6px;transition:background .25s}
   .nav .n{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:var(--muted);
     cursor:pointer;flex:1}
   .nav .n.on{color:var(--accent)}
@@ -93,15 +104,14 @@
     display:flex;align-items:center;justify-content:center;font-size:30px;margin-top:-20px;
     box-shadow:0 10px 24px rgba(37,99,235,.45);cursor:pointer;flex:0 0 auto}
 
-  /* detail screen */
   .detail h2{font-size:20px;margin:6px 0 8px;line-height:1.25}
-  .block{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:11px}
+  .block{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:11px}
   .block .lab{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
   .block p{margin:0;font-size:14.5px;line-height:1.5}
   .back{background:none;border:none;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer;padding:0;margin-bottom:4px}
 
-  /* create screen */
-  .voice{background:#fff;border:2px dashed #cfe0ff;border-radius:18px;padding:26px 16px;text-align:center;margin-top:14px}
+  .voice{background:var(--surface);border:2px dashed var(--accent-soft);border-radius:18px;padding:26px 16px;text-align:center;margin-top:14px}
+  .phone.dark .voice{border-color:#2c456e}
   .mic{width:84px;height:84px;border-radius:50%;background:var(--accent);color:#fff;display:flex;
     align-items:center;justify-content:center;font-size:38px;margin:0 auto 12px;cursor:pointer;
     box-shadow:0 12px 30px rgba(37,99,235,.4)}
@@ -109,44 +119,44 @@
   .voice span{display:block;font-size:13px;color:var(--muted);margin-top:4px}
   .or{text-align:center;color:var(--muted);font-size:12px;margin:16px 0 10px}
   .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
-  .chip{padding:8px 13px;border-radius:20px;background:var(--chip);font-size:13px;cursor:pointer;border:1px solid transparent}
+  .chip{padding:8px 13px;border-radius:20px;background:var(--chip);font-size:13px;cursor:pointer;
+    border:1px solid transparent;color:var(--ink)}
   .chip.on{background:var(--accent);color:#fff}
   .fieldlab{font-size:12px;font-weight:700;color:var(--muted);margin:16px 0 6px}
   textarea{width:100%;border:1px solid var(--line);border-radius:13px;padding:12px;font-size:14px;
-    font-family:inherit;resize:none;min-height:80px}
+    font-family:inherit;resize:none;min-height:80px;background:var(--surface);color:var(--ink)}
   .more{margin-top:14px;text-align:center;color:var(--accent);font-size:13.5px;font-weight:600;cursor:pointer}
 
-  /* profile */
-  .prof-top{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--line);
+  .prof-top{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--line);
     border-radius:16px;padding:16px;margin-top:14px}
   .avatar{width:54px;height:54px;border-radius:16px;background:var(--accent-soft);color:var(--accent);
     display:flex;align-items:center;justify-content:center;font-weight:800;font-size:21px}
   .stats{display:flex;gap:10px;margin-top:12px}
-  .stat{flex:1;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;text-align:center}
+  .stat{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;text-align:center}
   .stat b{display:block;font-size:24px;color:var(--ink)}
   .stat span{font-size:11.5px;color:var(--muted)}
-  .skill{display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--line);
-    border-radius:13px;padding:13px 14px;margin-top:10px;font-size:14px}
+  .skill{display:flex;align-items:center;justify-content:space-between;background:var(--surface);
+    border:1px solid var(--line);border-radius:13px;padding:13px 14px;margin-top:10px;font-size:14px}
   .skill em{font-style:normal;font-weight:700;color:var(--good)}
 
-  /* confirm sheet (the loop) */
   .sheet-bg{position:absolute;inset:0;background:rgba(8,15,30,.55);display:none;align-items:flex-end;z-index:30}
   .sheet-bg.show{display:flex}
-  .sheet{background:#fff;width:100%;border-radius:22px 22px 0 0;padding:20px 18px 24px;animation:up .25s ease}
+  .sheet{background:var(--surface);width:100%;border-radius:22px 22px 0 0;padding:20px 18px 24px;animation:up .25s ease}
   @keyframes up{from{transform:translateY(100%)}to{transform:translateY(0)}}
   .sheet h4{margin:0 0 4px;font-size:17px}
   .sheet .q{font-size:13.5px;color:var(--muted);margin-bottom:16px}
   .sheet .opt{display:flex;gap:10px;flex-wrap:wrap}
-  .sheet .opt button{flex:1 1 46%;border:1px solid var(--line);background:#fff;border-radius:13px;
-    padding:14px;font-size:14px;font-weight:600;cursor:pointer}
-  .sheet .opt button.g{border-color:#bbe7c7;background:var(--good-soft);color:var(--good)}
-  .demo-hint{position:absolute;bottom:84px;left:16px;right:16px;background:var(--ink);color:#fff;
+  .sheet .opt button{flex:1 1 46%;border:1px solid var(--line);background:var(--surface);border-radius:13px;
+    padding:14px;font-size:14px;font-weight:600;cursor:pointer;color:var(--ink)}
+  .sheet .opt button.g{border-color:var(--good-bar);background:var(--good-soft);color:var(--good)}
+  .demo-hint{position:absolute;bottom:84px;left:16px;right:16px;background:var(--ink);color:var(--screen-bg);
     border-radius:13px;padding:11px 14px;font-size:12.5px;display:flex;gap:8px;align-items:center;
     box-shadow:0 10px 30px rgba(2,8,23,.4);z-index:20}
-  .demo-hint b{color:#7dd3fc}
+  .demo-hint b{color:var(--accent)}
+  .phone.dark .demo-hint b{color:#7dd3fc}
 
   .toast{position:absolute;bottom:96px;left:50%;transform:translateX(-50%) translateY(20px);
-    background:var(--ink);color:#fff;padding:10px 18px;border-radius:30px;font-size:13px;opacity:0;
+    background:var(--ink);color:var(--screen-bg);padding:10px 18px;border-radius:30px;font-size:13px;opacity:0;
     transition:.3s;z-index:25;white-space:nowrap}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
@@ -156,21 +166,21 @@
 </style>
 </head>
 <body>
-<div class="phone">
+<div class="phone" id="phone">
   <div class="ribbon">ПРОТОТИП</div>
 
-  <!-- TOP BAR -->
   <div class="topbar">
     <div class="store">
       <div class="logo">C</div>
       <div class="meta">
         <b>Comfy · Лавіна</b>
-        <span id="roleline">Продавець · рівень: впевнений</span>
+        <span>Продавець · рівень: впевнений</span>
       </div>
     </div>
+    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">🌙</button>
   </div>
 
-  <!-- ============ FEED ============ -->
+  <!-- FEED -->
   <div class="screen" id="screen-feed">
     <div class="inwork" onclick="openConfirm()">
       <div class="l">
@@ -188,11 +198,11 @@
     <div class="pad" id="feed-list"></div>
   </div>
 
-  <!-- ============ DETAIL ============ -->
+  <!-- DETAIL -->
   <div class="screen hidden" id="screen-detail">
     <div class="pad detail">
       <button class="back" onclick="show('feed')">‹ Назад до стрічки</button>
-      <span class="card-cat" id="d-cat"></span>
+      <span class="cat" id="d-cat"></span>
       <h2 id="d-title"></h2>
       <div class="proof" id="d-proof"></div>
 
@@ -214,7 +224,7 @@
     </div>
   </div>
 
-  <!-- ============ CREATE ============ -->
+  <!-- CREATE -->
   <div class="screen hidden" id="screen-create">
     <div class="pad">
       <h2 style="font-size:20px;margin:6px 0 0">Новий кейс</h2>
@@ -251,7 +261,7 @@
     </div>
   </div>
 
-  <!-- ============ PROFILE ============ -->
+  <!-- PROFILE -->
   <div class="screen hidden" id="screen-profile">
     <div class="pad">
       <div class="prof-top">
@@ -297,7 +307,6 @@
   </div>
   <div class="toast" id="toast"></div>
 
-  <!-- BOTTOM NAV -->
   <div class="nav">
     <div class="n on" id="nav-feed" onclick="show('feed')"><span class="gl">📰</span>Стрічка</div>
     <div class="plus" onclick="show('create')">+</div>
@@ -306,7 +315,6 @@
 </div>
 
 <script>
-  // ---- mock data: the hero is RESULT social-proof, not likes ----
   const DATA = {
     it: [
       {cat:'IT Service',tier:'TOP',title:'Гарантія через питання, а не через тиск',
@@ -353,8 +361,8 @@
           <div class="bar"><i style="width:${d.rate}%"></i></div>
           <div class="txt">спрацювало<br>${d.ok} з ${d.tried} підтвердили</div>
         </div>` : `
-        <div class="proof" style="background:#f1f5f9">
-          <div class="txt" style="color:#64748b">Новий кейс — ще немає підтверджень. Будь першим, хто спробує.</div>
+        <div class="proof neutral">
+          <div class="txt">Новий кейс — ще немає підтверджень. Будь першим, хто спробує.</div>
         </div>`}
         <div class="foot">
           <span class="who">${d.author}</span>
@@ -374,13 +382,16 @@
   function openDetail(c,i){
     curItem=DATA[c][i];
     const d=curItem;
-    document.getElementById('d-cat').className='card cat';
-    document.getElementById('d-cat').outerHTML=`<span class="cat" id="d-cat">${d.cat}</span>`;
+    document.getElementById('d-cat').textContent=d.cat;
     document.getElementById('d-title').textContent=d.title;
-    document.getElementById('d-proof').innerHTML = d.tried>0
-      ? `<div class="big">${d.rate}%</div><div class="bar"><i style="width:${d.rate}%"></i></div><div class="txt">спрацювало · ${d.ok} з ${d.tried} підтвердили</div>`
-      : `<div class="txt" style="color:#64748b">Новий кейс — ще немає підтверджень</div>`;
-    document.getElementById('d-proof').style.background = d.tried>0 ? 'var(--good-soft)' : '#f1f5f9';
+    const proof=document.getElementById('d-proof');
+    if(d.tried>0){
+      proof.className='proof';
+      proof.innerHTML=`<div class="big">${d.rate}%</div><div class="bar"><i style="width:${d.rate}%"></i></div><div class="txt">спрацювало · ${d.ok} з ${d.tried} підтвердили</div>`;
+    } else {
+      proof.className='proof neutral';
+      proof.innerHTML=`<div class="txt">Новий кейс — ще немає підтверджень</div>`;
+    }
     document.getElementById('d-sit').textContent=d.sit;
     document.getElementById('d-do').textContent=d.do;
     document.getElementById('d-why').textContent=d.why;
@@ -427,6 +438,26 @@
     const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show');
     clearTimeout(tT); tT=setTimeout(()=>t.classList.remove('show'),1800);
   }
+
+  // ---- theme ----
+  function applyTheme(dark){
+    const p=document.getElementById('phone'), b=document.getElementById('themeBtn');
+    p.classList.toggle('dark',dark); b.textContent=dark?'☀️':'🌙';
+    document.querySelector('meta[name=theme-color]').setAttribute('content',dark?'#0e1726':'#0f172a');
+    try{localStorage.setItem('comfy-theme',dark?'dark':'light')}catch(e){}
+  }
+  function toggleTheme(){ applyTheme(!document.getElementById('phone').classList.contains('dark')); }
+
+  // init: saved choice, else follow system
+  (function(){
+    let dark=false;
+    try{
+      const s=localStorage.getItem('comfy-theme');
+      if(s) dark=s==='dark';
+      else dark=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }catch(e){}
+    applyTheme(dark);
+  })();
 
   renderFeed();
 </script>
