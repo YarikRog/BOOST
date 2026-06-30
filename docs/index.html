@@ -3,31 +3,31 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<meta name="theme-color" content="#0f172a" />
+<meta name="theme-color" content="#2f9e2f" />
 <title>Comfy Knowledge — прототип</title>
 <style>
   /* ---- LIGHT (default) ---- */
   :root{
-    --screen-bg:#f6f8fb; --surface:#ffffff; --ink:#0f172a; --muted:#64748b;
-    --line:#e7ebf0; --accent:#2563eb; --accent-soft:#eff4ff;
+    --screen-bg:#f5f8f5; --surface:#ffffff; --ink:#0f172a; --muted:#5b6b7c;
+    --line:#e6ebe6; --accent:#2f9e2f; --accent-soft:#e8f6e8; --accent2:#f26822;
     --good:#16a34a; --good-ink:#15803d; --good-soft:#e9f9ef; --good-bar:#cdeed8;
-    --warn:#d97706; --bad:#dc2626; --chip:#f1f5f9; --neutral-soft:#f1f5f9;
-    --shadow:0 2px 10px rgba(15,23,42,.04);
+    --warn:#d97706; --bad:#dc2626; --chip:#eef3ee; --neutral-soft:#eef2f6;
+    --shadow:0 2px 10px rgba(15,23,42,.05);
   }
   /* ---- DARK ---- */
   .phone.dark{
-    --screen-bg:#0e1726; --surface:#18232f; --ink:#e6edf6; --muted:#8b9bb1;
-    --line:#283648; --accent:#3b82f6; --accent-soft:#172741;
-    --good:#34d399; --good-ink:#6ee7b7; --good-soft:#10261d; --good-bar:#1f5138;
+    --screen-bg:#0e1726; --surface:#1a2533; --ink:#f1f6fc; --muted:#a6b6ca;
+    --line:#2b3a4d; --accent:#46c346; --accent-soft:#143218; --accent2:#ff7a33;
+    --good:#34d399; --good-ink:#7ff0c0; --good-soft:#10261d; --good-bar:#1f5138;
     --warn:#fbbf24; --bad:#f87171; --chip:#1f2c3c; --neutral-soft:#1c2735;
-    --shadow:0 2px 12px rgba(0,0,0,.3);
+    --shadow:0 2px 12px rgba(0,0,0,.32);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;padding:0}
   body{
     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
     background:linear-gradient(160deg,#0b1220,#1e293b);min-height:100vh;
-    display:flex;align-items:center;justify-content:center;padding:24px;color:var(--ink);
+    display:flex;align-items:center;justify-content:center;padding:24px;
   }
   .phone{
     width:100%;max-width:412px;height:860px;max-height:92vh;background:var(--screen-bg);
@@ -36,38 +36,64 @@
     box-shadow:0 30px 80px rgba(2,8,23,.55),0 0 0 10px #0c1424,0 0 0 11px #1e2a3e;
     transition:background .25s,color .25s;
   }
-  /* headings explicitly track the theme ink (defensive against inherited computed color) */
-  .phone h2,.phone h3,.phone h4,.store .meta b,.stat b,.sheet h4{color:var(--ink)}
-  /* top bar */
-  .topbar{background:var(--surface);padding:14px 18px 12px;border-bottom:1px solid var(--line);
-    flex-shrink:0;display:flex;align-items:center;justify-content:space-between;transition:background .25s}
-  .store{display:flex;align-items:center;gap:10px}
-  .store .logo{width:34px;height:34px;border-radius:10px;background:var(--accent);color:#fff;
-    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px}
-  .store .meta{line-height:1.25}
-  .store .meta b{font-size:15px}
-  .store .meta span{display:block;font-size:12px;color:var(--muted)}
-  .theme-btn{width:38px;height:38px;border-radius:11px;border:1px solid var(--line);background:var(--screen-bg);
-    font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  /* every text element resolves ink within the themed phone scope */
+  .phone h2,.phone h3,.phone h4,.phone b,.phone p,.store .meta b,.stat b,.sheet h4,.detail{color:var(--ink)}
 
+  /* ---- COMFY logo (vector) ---- */
+  .comfy-logo{display:inline-flex;align-items:center;gap:6px;background:#fff;border-radius:999px;
+    padding:6px 12px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+  .comfy-logo .cw{font-weight:800;font-size:15px;letter-spacing:.6px;color:#2f9e2f;
+    font-family:'Trebuchet MS','Segoe UI',Verdana,sans-serif}
+  .comfy-logo .cdot{width:9px;height:9px;border-radius:50%;background:#f26822;display:inline-block}
+  .comfy-logo.lg{padding:16px 30px;gap:12px}
+  .comfy-logo.lg .cw{font-size:42px}
+  .comfy-logo.lg .cdot{width:20px;height:20px}
+
+  /* ---- splash (zoom intro) ---- */
+  .splash{position:absolute;inset:0;z-index:100;background:#2f9e2f;display:flex;align-items:center;
+    justify-content:center;transition:opacity .5s ease,visibility .5s;cursor:pointer}
+  .splash.gone{opacity:0;visibility:hidden}
+  .splash .comfy-logo{animation:pop .85s cubic-bezier(.18,.9,.24,1.15) both}
+  .splash small{position:absolute;bottom:34px;color:rgba(255,255,255,.9);font-size:12.5px;letter-spacing:.3px}
+  @keyframes pop{0%{transform:scale(.15);opacity:0}55%{opacity:1}100%{transform:scale(1)}}
+
+  /* content reveal after splash */
   .screen{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
   .screen::-webkit-scrollbar{display:none}
   .pad{padding:14px 16px 90px}
 
-  .inwork{margin:14px 16px 0;background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;
+  .topbar{background:var(--surface);padding:12px 16px;border-bottom:1px solid var(--line);
+    flex-shrink:0;display:flex;align-items:center;justify-content:space-between;transition:background .25s}
+  .store{display:flex;align-items:center;gap:11px}
+  .store .meta{line-height:1.25}
+  .store .meta b{font-size:15px}
+  .store .meta span{display:block;font-size:12px;color:var(--muted)}
+  .theme-btn{width:38px;height:38px;border-radius:11px;border:1px solid var(--line);background:var(--screen-bg);
+    font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--ink)}
+
+  /* feed brand hero */
+  .hero{margin:14px 16px 0;border-radius:18px;padding:16px;color:#fff;position:relative;overflow:hidden;
+    background:linear-gradient(135deg,#2f9e2f,#37b53a);box-shadow:0 10px 26px rgba(47,158,47,.32)}
+  .hero .comfy-logo{margin-bottom:10px}
+  .hero h4{margin:0;color:#fff!important;font-size:16px}
+  .hero span{font-size:12.5px;opacity:.92}
+  .hero .blob{position:absolute;right:-26px;top:-26px;width:120px;height:120px;border-radius:50%;
+    background:rgba(242,104,34,.5);filter:blur(6px)}
+
+  .inwork{margin:14px 16px 0;background:linear-gradient(135deg,#ef6316,#ff8a3d);color:#fff;
     border-radius:16px;padding:13px 15px;display:flex;align-items:center;justify-content:space-between;
-    box-shadow:0 8px 22px rgba(37,99,235,.35);cursor:pointer}
+    box-shadow:0 8px 22px rgba(242,104,34,.35);cursor:pointer;position:relative;z-index:1}
   .inwork .l{display:flex;align-items:center;gap:11px}
-  .inwork .ic{width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.18);
+  .inwork .ic{width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.22);
     display:flex;align-items:center;justify-content:center;font-size:18px}
-  .inwork b{font-size:14px}
-  .inwork small{display:block;opacity:.85;font-size:12px}
-  .inwork .arr{opacity:.8}
+  .inwork b{font-size:14px;color:#fff!important}
+  .inwork small{display:block;opacity:.9;font-size:12px}
+  .inwork .arr{opacity:.85;font-size:18px}
 
   .tabs{display:flex;gap:8px;padding:14px 16px 4px;position:sticky;top:0;background:var(--screen-bg);z-index:5}
   .tab{flex:1;text-align:center;padding:9px;border-radius:11px;font-size:13px;font-weight:600;
     background:var(--surface);color:var(--muted);border:1px solid var(--line);cursor:pointer}
-  .tab.on{background:var(--ink);color:var(--screen-bg);border-color:var(--ink)}
+  .tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 
   .card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:15px;
     margin-top:12px;box-shadow:var(--shadow);cursor:pointer;transition:transform .08s,background .25s}
@@ -92,7 +118,7 @@
     font-size:13px;cursor:pointer;color:var(--muted)}
   .react button.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 
-  .take{width:100%;margin-top:12px;background:var(--ink);color:var(--screen-bg);border:none;border-radius:13px;
+  .take{width:100%;margin-top:12px;background:var(--accent);color:#fff;border:none;border-radius:13px;
     padding:13px;font-size:14.5px;font-weight:700;cursor:pointer}
   .take.taken{background:var(--good-soft);color:var(--good)}
 
@@ -103,9 +129,9 @@
     cursor:pointer;flex:1}
   .nav .n.on{color:var(--accent)}
   .nav .n .gl{font-size:21px}
-  .nav .plus{width:56px;height:56px;border-radius:18px;background:var(--accent);color:#fff;
+  .nav .plus{width:56px;height:56px;border-radius:18px;background:var(--accent2);color:#fff;
     display:flex;align-items:center;justify-content:center;font-size:30px;margin-top:-20px;
-    box-shadow:0 10px 24px rgba(37,99,235,.45);cursor:pointer;flex:0 0 auto}
+    box-shadow:0 10px 24px rgba(242,104,34,.5);cursor:pointer;flex:0 0 auto}
 
   .detail h2{font-size:20px;margin:6px 0 8px;line-height:1.25}
   .block{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:11px}
@@ -114,10 +140,10 @@
   .back{background:none;border:none;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer;padding:0;margin-bottom:4px}
 
   .voice{background:var(--surface);border:2px dashed var(--accent-soft);border-radius:18px;padding:26px 16px;text-align:center;margin-top:14px}
-  .phone.dark .voice{border-color:#2c456e}
+  .phone.dark .voice{border-color:#1f5a26}
   .mic{width:84px;height:84px;border-radius:50%;background:var(--accent);color:#fff;display:flex;
     align-items:center;justify-content:center;font-size:38px;margin:0 auto 12px;cursor:pointer;
-    box-shadow:0 12px 30px rgba(37,99,235,.4)}
+    box-shadow:0 12px 30px rgba(47,158,47,.4)}
   .voice b{font-size:16px}
   .voice span{display:block;font-size:13px;color:var(--muted);margin-top:4px}
   .or{text-align:center;color:var(--muted);font-size:12px;margin:16px 0 10px}
@@ -136,11 +162,17 @@
     display:flex;align-items:center;justify-content:center;font-weight:800;font-size:21px}
   .stats{display:flex;gap:10px;margin-top:12px}
   .stat{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;text-align:center}
-  .stat b{display:block;font-size:24px;color:var(--ink)}
+  .stat b{display:block;font-size:24px}
   .stat span{font-size:11.5px;color:var(--muted)}
   .skill{display:flex;align-items:center;justify-content:space-between;background:var(--surface);
     border:1px solid var(--line);border-radius:13px;padding:13px 14px;margin-top:10px;font-size:14px}
   .skill em{font-style:normal;font-weight:700;color:var(--good)}
+  .brandcard{margin-top:20px;border-radius:18px;padding:20px 16px;text-align:center;color:#fff;
+    background:linear-gradient(135deg,#2f9e2f,#37b53a);position:relative;overflow:hidden}
+  .brandcard .comfy-logo{margin-bottom:12px}
+  .brandcard p{margin:0;color:#fff!important;font-size:12.5px;line-height:1.5;opacity:.95}
+  .brandcard .blob{position:absolute;left:-30px;bottom:-30px;width:120px;height:120px;border-radius:50%;
+    background:rgba(242,104,34,.45);filter:blur(8px)}
 
   .sheet-bg{position:absolute;inset:0;background:rgba(8,15,30,.55);display:none;align-items:flex-end;z-index:30}
   .sheet-bg.show{display:flex}
@@ -155,8 +187,7 @@
   .demo-hint{position:absolute;bottom:84px;left:16px;right:16px;background:var(--ink);color:var(--screen-bg);
     border-radius:13px;padding:11px 14px;font-size:12.5px;display:flex;gap:8px;align-items:center;
     box-shadow:0 10px 30px rgba(2,8,23,.4);z-index:20}
-  .demo-hint b{color:var(--accent)}
-  .phone.dark .demo-hint b{color:#7dd3fc}
+  .demo-hint b{color:var(--accent2)}
 
   .toast{position:absolute;bottom:96px;left:50%;transform:translateX(-50%) translateY(20px);
     background:var(--ink);color:var(--screen-bg);padding:10px 18px;border-radius:30px;font-size:13px;opacity:0;
@@ -172,11 +203,17 @@
 <div class="phone" id="phone">
   <div class="ribbon">ПРОТОТИП</div>
 
+  <!-- SPLASH (zoom intro) -->
+  <div class="splash" id="splash" onclick="this.classList.add('gone')">
+    <div class="comfy-logo lg"><span class="cw">COMFY</span><span class="cdot"></span></div>
+    <small>Жива база продажів</small>
+  </div>
+
   <div class="topbar">
     <div class="store">
-      <div class="logo">C</div>
+      <span class="comfy-logo"><span class="cw">COMFY</span><span class="cdot"></span></span>
       <div class="meta">
-        <b>Comfy · Лавіна</b>
+        <b>Лавіна</b>
         <span>Продавець · рівень: впевнений</span>
       </div>
     </div>
@@ -185,6 +222,13 @@
 
   <!-- FEED -->
   <div class="screen" id="screen-feed">
+    <div class="hero">
+      <div class="blob"></div>
+      <div class="comfy-logo"><span class="cw">COMFY</span><span class="cdot"></span></div>
+      <h4>База знань продажів</h4>
+      <span>Реальні кейси тих, хто вже продав</span>
+    </div>
+
     <div class="inwork" onclick="openConfirm()">
       <div class="l">
         <div class="ic">📌</div>
@@ -285,9 +329,11 @@
       <div class="skill"><span>IT Service</span><em>сильний</em></div>
       <div class="skill"><span>Happy Service</span><em style="color:var(--warn)">початковий</em></div>
 
-      <p style="font-size:12px;color:var(--muted);text-align:center;margin-top:22px;line-height:1.5">
-        Рейтинг належить кейсам, а не людям.<br>Ти стаєш помітним через якість своїх кейсів.
-      </p>
+      <div class="brandcard">
+        <div class="blob"></div>
+        <div class="comfy-logo"><span class="cw">COMFY</span><span class="cdot"></span></div>
+        <p>Рейтинг належить кейсам, а не людям.<br>Ти стаєш помітним через якість своїх кейсів.</p>
+      </div>
     </div>
   </div>
 
@@ -306,7 +352,7 @@
   </div>
 
   <div class="demo-hint" id="hint">
-    <span>👉 <b>Натисни картку</b> → відкрий кейс → «Беру в роботу». Або тапни синій блок «в роботі».</span>
+    <span>👉 <b>Натисни картку</b> → відкрий кейс → «Беру в роботу». Або тапни блок «в роботі».</span>
   </div>
   <div class="toast" id="toast"></div>
 
@@ -349,7 +395,7 @@
     ]
   };
 
-  let curCat='it', curItem=null;
+  let curCat='it';
 
   function renderFeed(){
     const list = DATA[curCat];
@@ -383,8 +429,7 @@
   }
 
   function openDetail(c,i){
-    curItem=DATA[c][i];
-    const d=curItem;
+    const d=DATA[c][i];
     document.getElementById('d-cat').textContent=d.cat;
     document.getElementById('d-title').textContent=d.title;
     const proof=document.getElementById('d-proof');
@@ -446,12 +491,9 @@
   function applyTheme(dark){
     const p=document.getElementById('phone'), b=document.getElementById('themeBtn');
     p.classList.toggle('dark',dark); b.textContent=dark?'☀️':'🌙';
-    document.querySelector('meta[name=theme-color]').setAttribute('content',dark?'#0e1726':'#0f172a');
     try{localStorage.setItem('comfy-theme',dark?'dark':'light')}catch(e){}
   }
   function toggleTheme(){ applyTheme(!document.getElementById('phone').classList.contains('dark')); }
-
-  // init: saved choice, else follow system
   (function(){
     let dark=false;
     try{
@@ -461,6 +503,9 @@
     }catch(e){}
     applyTheme(dark);
   })();
+
+  // splash auto-dismiss
+  setTimeout(()=>document.getElementById('splash').classList.add('gone'),1500);
 
   renderFeed();
 </script>
