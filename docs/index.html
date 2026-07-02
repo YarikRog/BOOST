@@ -12,6 +12,11 @@
     --good:#16a34a; --good-soft:#e9f9ef; --warn:#d97706; --bad:#dc2626;
     --chip:#f1f5f9;
   }
+  .phone.dark{
+    --card:#1e293b; --ink:#f1f5f9; --muted:#94a3b8;
+    --line:#334155; --accent-soft:#1e3a8a; --chip:#334155;
+    --good-soft:#164e3f;
+  }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;padding:0}
   body{
@@ -23,9 +28,16 @@
     width:100%;max-width:412px;height:860px;max-height:92vh;background:#f6f8fb;
     border-radius:34px;overflow:hidden;position:relative;display:flex;flex-direction:column;
     box-shadow:0 30px 80px rgba(2,8,23,.55),0 0 0 10px #0c1424,0 0 0 11px #1e2a3e;
+    transition:background-color .3s, color .3s;
   }
+  .phone.dark{background:#0f172a}
+  .phone.dark .topbar, .phone.dark .tabs, .phone.dark .nav, .phone.dark .sheet{background:var(--card)}
+  .phone.dark textarea{background:var(--card);color:var(--ink)}
+  .phone.dark textarea::placeholder{color:var(--muted)}
   /* top bar */
-  .topbar{background:#fff;padding:14px 18px 12px;border-bottom:1px solid var(--line);flex-shrink:0}
+  .topbar{background:#fff;padding:14px 18px 12px;border-bottom:1px solid var(--line);flex-shrink:0;
+    display:flex;align-items:center;justify-content:space-between}
+  .topbar .theme-toggle{background:none;border:none;font-size:20px;cursor:pointer;padding:0;color:var(--ink)}
   .store{display:flex;align-items:center;gap:10px}
   .store .logo{width:34px;height:34px;border-radius:10px;background:var(--accent);color:#fff;
     display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px}
@@ -168,6 +180,7 @@
         <span id="roleline">Продавець · рівень: впевнений</span>
       </div>
     </div>
+    <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()">🌙</button>
   </div>
 
   <!-- ============ FEED ============ -->
@@ -429,6 +442,32 @@
   }
 
   renderFeed();
+
+  // Theme management
+  function applyTheme(theme){
+    const phone=document.querySelector('.phone');
+    const toggle=document.getElementById('theme-toggle');
+    if(theme==='dark'){
+      phone.classList.add('dark');
+      toggle.textContent='☀️';
+    } else {
+      phone.classList.remove('dark');
+      toggle.textContent='🌙';
+    }
+    localStorage.setItem('theme',theme);
+  }
+
+  function toggleTheme(){
+    const phone=document.querySelector('.phone');
+    const isDark=phone.classList.contains('dark');
+    applyTheme(isDark?'light':'dark');
+  }
+
+  // Initialize theme
+  const saved=localStorage.getItem('theme');
+  const pref=window.matchMedia('(prefers-color-scheme:dark)').matches;
+  const initial=saved||( pref?'dark':'light');
+  applyTheme(initial);
 </script>
 </body>
 </html>
