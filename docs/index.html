@@ -428,10 +428,14 @@
     let html = '';
     for(let i=0;i<list.length;i++){
       const d = list[i];
-      const proof = d.tried>0 ?
-        `<div class="proof"><div class="big">${d.rate}%</div><div class="bar"><i style="width:${d.rate}%"></i></div><div class="txt">спрацювало<br>${d.ok} з ${d.tried} підтвердили</div></div>` :
-        `<div class="proof neutral"><div class="txt">Новий кейс — ще немає підтверджень. Будь першим, хто спробує.</div></div>`;
-      html += `<div class="card" onclick="openDetail('${curCat}',${i})"><span class="cat">${d.cat}</span><span class="tier">${d.tier}</span><h3>${d.title}</h3><div class="sub">${d.sub}</div>${proof}<div class="foot"><span class="who">${d.author}</span><div class="react"><button onclick="event.stopPropagation();tog(this)">👍</button><button onclick="event.stopPropagation();tog(this)">👎</button></div></div></div>`;
+      let proofHtml;
+      if(d.tried>0){
+        proofHtml = '<div class="proof"><div class="big">'+d.rate+'%</div><div class="bar"><i style="width:'+d.rate+'%"></i></div><div class="txt">спрацювало<br>'+d.ok+' з '+d.tried+' підтвердили</div></div>';
+      } else {
+        proofHtml = '<div class="proof neutral"><div class="txt">Новий кейс — ще немає підтверджень. Будь першим, хто спробує.</div></div>';
+      }
+      const cardHtml = '<div class="card" onclick="openDetail(\''+curCat+'\','+i+')"><span class="cat">'+d.cat+'</span><span class="tier">'+d.tier+'</span><h3>'+d.title+'</h3><div class="sub">'+d.sub+'</div>'+proofHtml+'<div class="foot"><span class="who">'+d.author+'</span><div class="react"><button onclick="event.stopPropagation();tog(this)">👍</button><button onclick="event.stopPropagation();tog(this)">👎</button></div></div></div>';
+      html += cardHtml;
     }
     document.getElementById('feed-list').innerHTML = html;
   }
