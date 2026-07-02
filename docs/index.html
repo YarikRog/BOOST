@@ -36,10 +36,8 @@
     box-shadow:0 30px 80px rgba(2,8,23,.55),0 0 0 10px #0c1424,0 0 0 11px #1e2a3e;
     transition:background .25s,color .25s;
   }
-  /* every text element resolves ink within the themed phone scope */
   .phone h2,.phone h3,.phone h4,.phone b,.phone p,.store .meta b,.stat b,.sheet h4,.detail{color:var(--ink)}
 
-  /* ---- COMFY logo (vector) ---- */
   .comfy-logo{display:inline-flex;align-items:center;gap:6px;background:#fff;border-radius:999px;
     padding:6px 12px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
   .comfy-logo .cw{font-weight:800;font-size:15px;letter-spacing:.6px;color:#2f9e2f;
@@ -49,7 +47,6 @@
   .comfy-logo.lg .cw{font-size:42px}
   .comfy-logo.lg .cdot{width:20px;height:20px}
 
-  /* ---- splash (zoom intro) ---- */
   .splash{position:absolute;inset:0;z-index:100;background:#2f9e2f;display:flex;align-items:center;
     justify-content:center;transition:opacity .5s ease,visibility .5s;cursor:pointer}
   .splash.gone{opacity:0;visibility:hidden}
@@ -57,7 +54,6 @@
   .splash small{position:absolute;bottom:34px;color:rgba(255,255,255,.9);font-size:12.5px;letter-spacing:.3px}
   @keyframes pop{0%{transform:scale(.15);opacity:0}55%{opacity:1}100%{transform:scale(1)}}
 
-  /* content reveal after splash */
   .screen{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
   .screen::-webkit-scrollbar{display:none}
   .pad{padding:14px 16px 90px}
@@ -71,7 +67,6 @@
   .theme-btn{width:38px;height:38px;border-radius:11px;border:1px solid var(--line);background:var(--screen-bg);
     font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--ink)}
 
-  /* feed brand hero */
   .hero{margin:14px 16px 0;border-radius:18px;padding:16px;color:#fff;position:relative;overflow:hidden;
     background:linear-gradient(135deg,#2f9e2f,#37b53a);box-shadow:0 10px 26px rgba(47,158,47,.32)}
   .hero .comfy-logo{margin-bottom:10px}
@@ -203,7 +198,6 @@
 <div class="phone" id="phone">
   <div class="ribbon">ПРОТОТИП</div>
 
-  <!-- SPLASH (zoom intro) -->
   <div class="splash" id="splash" onclick="this.classList.add('gone')">
     <div class="comfy-logo lg"><span class="cw">COMFY</span><span class="cdot"></span></div>
     <small>Жива база продажів</small>
@@ -220,7 +214,6 @@
     <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">🌙</button>
   </div>
 
-  <!-- FEED -->
   <div class="screen" id="screen-feed">
     <div class="hero">
       <div class="blob"></div>
@@ -245,18 +238,16 @@
     <div class="pad" id="feed-list"></div>
   </div>
 
-  <!-- DETAIL -->
   <div class="screen hidden" id="screen-detail">
     <div class="pad detail">
       <button class="back" onclick="show('feed')">‹ Назад до стрічки</button>
       <span class="cat" id="d-cat"></span>
       <h2 id="d-title"></h2>
       <div class="proof" id="d-proof"></div>
-
+      <div class="block"><div class="lab">Товар</div><p id="d-product" style="margin:0;font-size:14.5px;line-height:1.5"></p></div>
       <div class="block"><div class="lab">Ситуація</div><p id="d-sit"></p></div>
       <div class="block"><div class="lab">Що кажу / роблю</div><p id="d-do"></p></div>
       <div class="block"><div class="lab">Чому спрацьовує</div><p id="d-why"></p></div>
-
       <div class="card" style="cursor:default;margin-top:14px">
         <div class="foot">
           <span class="who" id="d-author"></span>
@@ -266,12 +257,10 @@
           </div>
         </div>
       </div>
-
       <button class="take" id="d-take" onclick="takeIt()">📌 Беру в роботу</button>
     </div>
   </div>
 
-  <!-- CREATE -->
   <div class="screen hidden" id="screen-create">
     <div class="pad">
       <h2 style="font-size:20px;margin:6px 0 0">Новий кейс</h2>
@@ -286,18 +275,10 @@
       <div class="or">— або коротко текстом —</div>
 
       <div class="fieldlab">Категорія</div>
-      <div class="chips">
-        <div class="chip on">IT Service</div>
-        <div class="chip">Happy Service</div>
-      </div>
+      <div class="chips" id="cat-chips"></div>
 
       <div class="fieldlab">Товар</div>
-      <div class="chips">
-        <div class="chip on">Ноутбуки</div>
-        <div class="chip">ТВ</div>
-        <div class="chip">Смартфони</div>
-        <div class="chip">Техніка для дому</div>
-      </div>
+      <div class="chips" id="product-chips"></div>
 
       <div class="fieldlab">Опиши кейс</div>
       <textarea placeholder="Що сказав клієнт, що відповів ти, чим завершилось…"></textarea>
@@ -308,7 +289,6 @@
     </div>
   </div>
 
-  <!-- PROFILE -->
   <div class="screen hidden" id="screen-profile">
     <div class="pad">
       <div class="prof-top">
@@ -337,7 +317,6 @@
     </div>
   </div>
 
-  <!-- confirm sheet -->
   <div class="sheet-bg" id="sheet">
     <div class="sheet">
       <h4>Кейс «Гарантія через питання»</h4>
@@ -364,38 +343,69 @@
 </div>
 
 <script>
+  const PRODUCTS = {
+    it: ['Смартфони', 'Планшети', 'Ноутбуки'],
+    happy: ['Холодильники', 'Пральні машини', 'Телевізори']
+  };
+
   const DATA = {
     it: [
-      {cat:'IT Service',tier:'TOP',title:'Гарантія через питання, а не через тиск',
-       sub:'Ноутбуки · для невпевненого клієнта',
+      {cat:'IT Service',tier:'TOP',product:'Ноутбуки',title:'Гарантія через питання, а не через тиск',
        rate:82,tried:22,ok:18,author:'Store Київ 22',
        sit:'Клієнт каже «мені гарантія не потрібна, я акуратний».',
        do:'Не сперечаюсь. Питаю: «А якщо через рік мати випадково заллє клавіатуру — у скільки обійдеться ремонт?» Даю йому самому назвати суму.',
        why:'Людина сама усвідомлює ризик і називає ціну — це сильніше за будь-який мій аргумент.'},
-      {cat:'IT Service',tier:'GROWING',title:'Налаштування «під ключ» як причина сервісу',
-       sub:'Ноутбуки · купує вперше',
+      {cat:'IT Service',tier:'GROWING',product:'Ноутбуки',title:'Налаштування «під ключ» як причина сервісу',
        rate:74,tried:19,ok:14,author:'Region Lead',
        sit:'Клієнт вперше купує ноутбук і трохи губиться.',
        do:'Пропоную забрати вже готовий до роботи: оновлення, антивірус, перенос даних. «Заберете і одразу працюєте, без мороки».',
        why:'Знімаю страх «я сам не розберусь» — продаю спокій, а не послугу.'},
-      {cat:'IT Service',tier:'NEW',title:'Порівняння двох сервісів замість «так/ні»',
-       sub:'Техніка для дому',
+      {cat:'IT Service',tier:'NEW',product:'Смартфони',title:'Порівняння двох сервісів замість «так/ні»',
        rate:0,tried:0,ok:0,author:'Іван Коваль',
        sit:'Клієнт відмовляється від сервісу одразу.',
        do:'Показую два пакети поруч. Питання вже не «брати чи ні», а «який з двох».',
        why:'Зміщую вибір — і відмова стає рідшою.'}
     ],
     happy: [
-      {cat:'Happy Service',tier:'TOP',title:'Емоція до того, як назвав ціну',
-       sub:'ТВ · родина з дітьми',
+      {cat:'Happy Service',tier:'TOP',product:'Телевізори',title:'Емоція до того, як назвав ціну',
        rate:88,tried:25,ok:22,author:'Store Лавіна',
-       sit:'Сім’я обирає телевізор, дивляться на ціну першою.',
-       do:'Спочатку даю уявити: «Уявіть вечір п’ятниці, всі разом, цей екран». Ціну називаю після картинки.',
+       sit:'Сім'я обирає телевізор, дивляються на ціну першою.',
+       do:'Спочатку даю уявити: «Уявіть вечір п'ятниці, всі разом, цей екран». Ціну називаю після картинки.',
        why:'Емоція формує цінність — ціна сприймається легше.'}
     ]
   };
 
   let curCat='it';
+  let selectedProduct='Ноутбуки';
+
+  function renderCategoryChips(){
+    const container = document.getElementById('cat-chips');
+    container.innerHTML = ['it','happy'].map(c=>`
+      <div class="chip ${c===curCat?'on':''}" onclick="switchCreateCat(this,'${c}')">
+        ${c==='it'?'IT Service':'Happy Service'}
+      </div>`).join('');
+  }
+
+  function renderProductChips(){
+    const container = document.getElementById('product-chips');
+    const products = PRODUCTS[curCat];
+    container.innerHTML = products.map(p=>`
+      <div class="chip ${p===selectedProduct?'on':''}" onclick="selectProduct(this,'${p}')">
+        ${p}
+      </div>`).join('');
+  }
+
+  function switchCreateCat(el, cat){
+    curCat = cat;
+    selectedProduct = PRODUCTS[cat][0];
+    renderCategoryChips();
+    renderProductChips();
+  }
+
+  function selectProduct(el, product){
+    selectedProduct = product;
+    renderProductChips();
+  }
 
   function renderFeed(){
     const list = DATA[curCat];
@@ -403,7 +413,7 @@
       <div class="card" onclick="openDetail('${curCat}',${i})">
         <span class="cat">${d.cat}</span><span class="tier">${d.tier}</span>
         <h3>${d.title}</h3>
-        <div class="sub">${d.sub}</div>
+        <div class="sub">${d.product}</div>
         ${d.tried>0 ? `
         <div class="proof">
           <div class="big">${d.rate}%</div>
@@ -432,6 +442,7 @@
     const d=DATA[c][i];
     document.getElementById('d-cat').textContent=d.cat;
     document.getElementById('d-title').textContent=d.title;
+    document.getElementById('d-product').textContent=d.product;
     const proof=document.getElementById('d-proof');
     if(d.tried>0){
       proof.className='proof';
@@ -469,6 +480,7 @@
     document.getElementById('nav-feed').classList.toggle('on', s==='feed'||s==='detail');
     document.getElementById('nav-profile').classList.toggle('on', s==='profile');
     document.getElementById('hint').style.display = s==='feed' ? 'flex':'none';
+    if(s==='create'){ renderCategoryChips(); renderProductChips(); }
     document.getElementById('screen-'+s).scrollTop=0;
   }
 
@@ -487,7 +499,6 @@
     clearTimeout(tT); tT=setTimeout(()=>t.classList.remove('show'),1800);
   }
 
-  // ---- theme ----
   function applyTheme(dark){
     const p=document.getElementById('phone'), b=document.getElementById('themeBtn');
     p.classList.toggle('dark',dark); b.textContent=dark?'☀️':'🌙';
@@ -504,7 +515,6 @@
     applyTheme(dark);
   })();
 
-  // splash auto-dismiss
   setTimeout(()=>document.getElementById('splash').classList.add('gone'),1500);
 
   renderFeed();
