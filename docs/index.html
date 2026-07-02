@@ -32,6 +32,7 @@
   }
   .phone.dark{background:#0f172a}
   .phone.dark .topbar, .phone.dark .tabs, .phone.dark .nav, .phone.dark .sheet{background:var(--card)}
+  .phone.dark .store .logo{background:rgba(255,255,255,.08)}
   .phone.dark textarea{background:var(--card);color:var(--ink)}
   .phone.dark textarea::placeholder{color:var(--muted)}
   .phone.dark h2, .phone.dark h3, .phone.dark h4, .phone.dark p, .phone.dark b, .phone.dark span{color:var(--ink)}
@@ -41,8 +42,9 @@
     display:flex;align-items:center;justify-content:space-between}
   .topbar .theme-toggle{background:none;border:none;font-size:20px;cursor:pointer;padding:0;color:var(--ink)}
   .store{display:flex;align-items:center;gap:10px}
-  .store .logo{width:34px;height:34px;border-radius:10px;background:var(--accent);color:#fff;
-    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px}
+  .store .logo{width:34px;height:34px;border-radius:10px;background:transparent;color:#fff;
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;overflow:hidden}
+  .store .logo img{width:100%;height:100%;object-fit:contain}
   .store .meta{line-height:1.25}
   .store .meta b{font-size:15px}
   .store .meta span{display:block;font-size:12px;color:var(--muted)}
@@ -167,16 +169,26 @@
   .hidden{display:none}
   .ribbon{position:absolute;top:10px;left:-34px;transform:rotate(-45deg);background:#f59e0b;color:#000;
     font-size:10px;font-weight:800;padding:3px 40px;z-index:40;letter-spacing:.5px}
+
+  /* splash screen */
+  .splash{position:absolute;inset:0;background:linear-gradient(135deg,#2f9e2f,#1e7e1e);
+    display:flex;align-items:center;justify-content:center;z-index:50;animation:splashFade .8s ease-out .4s forwards;opacity:1}
+  @keyframes splashFade{from{opacity:1}to{opacity:0;pointer-events:none}}
+  .splash-logo{width:180px;height:auto;animation:splashPop .85s cubic-bezier(.34,.1,.68,.55) forwards;transform:scale(.15)}
+  @keyframes splashPop{from{transform:scale(.15)}to{transform:scale(1)}}
 </style>
 </head>
 <body>
 <div class="phone">
   <div class="ribbon">ПРОТОТИП</div>
+  <div class="splash" id="splash">
+    <img class="splash-logo" src="img/comfy-logo-splash.png" alt="Comfy Knowledge">
+  </div>
 
   <!-- TOP BAR -->
   <div class="topbar">
     <div class="store">
-      <div class="logo">C</div>
+      <div class="logo"><img src="img/comfy-logo.png" alt="Comfy" style="padding:4px"></div>
       <div class="meta">
         <b>Comfy · Лавіна</b>
         <span id="roleline">Продавець · рівень: впевнений</span>
@@ -470,6 +482,12 @@
   const pref=window.matchMedia('(prefers-color-scheme:dark)').matches;
   const initial=saved||( pref?'dark':'light');
   applyTheme(initial);
+
+  // Hide splash after animation
+  setTimeout(()=>{
+    const splash=document.getElementById('splash');
+    if(splash) splash.style.display='none';
+  },1200);
 </script>
 </body>
 </html>
