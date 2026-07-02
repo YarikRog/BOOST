@@ -425,19 +425,28 @@
 
   function renderFeed(){
     const list = DATA[curCat];
-    let html = '';
-    for(let i=0;i<list.length;i++){
-      const d = list[i];
-      let proofHtml;
-      if(d.tried>0){
-        proofHtml = '<div class="proof"><div class="big">'+d.rate+'%</div><div class="bar"><i style="width:'+d.rate+'%"></i></div><div class="txt">спрацювало<br>'+d.ok+' з '+d.tried+' підтвердили</div></div>';
-      } else {
-        proofHtml = '<div class="proof neutral"><div class="txt">Новий кейс — ще немає підтверджень. Будь першим, хто спробує.</div></div>';
-      }
-      const cardHtml = '<div class="card" onclick="openDetail(\''+curCat+'\','+i+')"><span class="cat">'+d.cat+'</span><span class="tier">'+d.tier+'</span><h3>'+d.title+'</h3><div class="sub">'+d.sub+'</div>'+proofHtml+'<div class="foot"><span class="who">'+d.author+'</span><div class="react"><button onclick="event.stopPropagation();tog(this)">👍</button><button onclick="event.stopPropagation();tog(this)">👎</button></div></div></div>';
-      html += cardHtml;
-    }
-    document.getElementById('feed-list').innerHTML = html;
+    document.getElementById('feed-list').innerHTML = list.map((d,i)=>`
+      <div class="card" onclick="openDetail('${curCat}',${i})">
+        <span class="cat">${d.cat}</span><span class="tier">${d.tier}</span>
+        <h3>${d.title}</h3>
+        <div class="sub">${d.sub}</div>
+        ${d.tried>0 ? `
+        <div class="proof">
+          <div class="big">${d.rate}%</div>
+          <div class="bar"><i style="width:${d.rate}%"></i></div>
+          <div class="txt">спрацювало<br>${d.ok} з ${d.tried} підтвердили</div>
+        </div>` : `
+        <div class="proof neutral">
+          <div class="txt">Новий кейс — ще немає підтверджень. Будь першим, хто спробує.</div>
+        </div>`}
+        <div class="foot">
+          <span class="who">${d.author}</span>
+          <div class="react">
+            <button onclick="event.stopPropagation();tog(this)">👍</button>
+            <button onclick="event.stopPropagation();tog(this)">👎</button>
+          </div>
+        </div>
+      </div>`).join('');
   }
 
   function switchCat(el,c){
@@ -480,7 +489,6 @@
     if(!was) b.classList.add('on');
   }
 
-  let chipsRendered = false;
   function show(s){
     ['feed','detail','create','profile'].forEach(x=>{
       document.getElementById('screen-'+x).classList.toggle('hidden', x!==s);
@@ -488,11 +496,6 @@
     document.getElementById('nav-feed').classList.toggle('on', s==='feed'||s==='detail');
     document.getElementById('nav-profile').classList.toggle('on', s==='profile');
     document.getElementById('hint').style.display = s==='feed' ? 'flex':'none';
-    if(s==='create' && !chipsRendered){
-      renderCategoryChips();
-      renderProductChips();
-      chipsRendered = true;
-    }
     document.getElementById('screen-'+s).scrollTop=0;
   }
 
@@ -530,6 +533,8 @@
   setTimeout(()=>document.getElementById('splash').classList.add('gone'),1500);
 
   renderFeed();
+  renderCategoryChips();
+  renderProductChips();
 </script>
 </body>
 </html>
