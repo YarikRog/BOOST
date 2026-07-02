@@ -489,6 +489,7 @@
     if(!was) b.classList.add('on');
   }
 
+  let chipsRendered = false;
   function show(s){
     ['feed','detail','create','profile'].forEach(x=>{
       document.getElementById('screen-'+x).classList.toggle('hidden', x!==s);
@@ -496,6 +497,11 @@
     document.getElementById('nav-feed').classList.toggle('on', s==='feed'||s==='detail');
     document.getElementById('nav-profile').classList.toggle('on', s==='profile');
     document.getElementById('hint').style.display = s==='feed' ? 'flex':'none';
+    if(s==='create' && !chipsRendered){
+      renderCategoryChips();
+      renderProductChips();
+      chipsRendered = true;
+    }
     document.getElementById('screen-'+s).scrollTop=0;
   }
 
@@ -533,8 +539,6 @@
   setTimeout(()=>document.getElementById('splash').classList.add('gone'),1500);
 
   renderFeed();
-  renderCategoryChips();
-  renderProductChips();
 </script>
 </body>
 </html>
