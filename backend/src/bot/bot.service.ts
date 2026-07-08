@@ -85,6 +85,7 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     bot.command('start', (ctx) => this.onStart(ctx));
     bot.command('app', (ctx) => this.sendAppButton(ctx));
     bot.command('newstore', (ctx) => this.onNewStore(ctx));
+    bot.command('reset', (ctx) => this.onReset(ctx));
     bot.on(':contact', (ctx) => this.onContact(ctx));
     bot.callbackQuery(/^exp:(.+)$/, (ctx) => this.onExperience(ctx));
     bot.on('message:text', (ctx) => this.onText(ctx));
@@ -203,6 +204,45 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     }
   }
 
+  /**
+   * TEST-ONLY: `/reset <telegramId>` hard-deletes a user (default: yourself)
+   * so the bot flow can be retried from scratch. MEGA_ADMIN only. Deleting
+   * yourself lets the next /start re-bootstrap you as the first admin.
+   */
+  private async onReset(ctx: Context): Promise<void> {
+    const tgId = ctx.from?.id;
+    if (!tgId) return;
+
+    const caller = await this.users.findByTelegramId(tgId);
+    if (!caller || caller.role !== UserRole.MEGA_ADMIN) {
+      await ctx.reply('🔒 Команда лише для адміністратора.');
+      return;
+    }
+
+    const arg = (ctx.match as string | undefined)?.trim();
+    const targetId = arg ? Number(arg) : tgId;
+    if (!Number.isFinite(targetId)) {
+      await ctx.reply('Вкажи числовий Telegram ID: /reset 123456789 (або /reset без ID — видалити себе)');
+      return;
+    }
+
+    try {
+      const deleted = await this.users.deleteByTelegramId(targetId);
+      await this.clearState(targetId);
+      if (!deleted) {
+        await ctx.reply(`Користувача з ID ${targetId} не знайдено.`);
+        return;
+      }
+      await ctx.reply(
+        targetId === tgId
+          ? '🗑 Тебе видалено. Надішли /start, щоб зайти заново.'
+          : `🗑 Користувача ${targetId} видалено.`,
+      );
+    } catch (e) {
+      await ctx.reply(`❌ ${(e as Error).message}`);
+    }
+  }
+
   private async askPhone(ctx: Context): Promise<void> {
     const kb = new Keyboard().requestContact('📞 Поділитися номером').resized().oneTime();
     await ctx.reply('Підтвердіть номер телефону:', { reply_markup: kb });
@@ -220,6 +260,8 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     await this.users.setPhone(state.userId, phone);
     state.step = 'experience';
     await this.setState(tgId, state);
+    // Number confirmed — the request-contact keyboard is no longer needed.
+    await ctx.reply('✅ Номер підтверджено.', { reply_markup: { remove_keyboard: true } });
     await this.askExperience(ctx);
   }
 

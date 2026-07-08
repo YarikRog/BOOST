@@ -187,6 +187,38 @@ export class UsersService {
     });
   }
 
+  /**
+   * TEST-ONLY hard delete by telegram_id. Removes the user and everything that
+   * FK-references them (reactions, work-items, authored lifehacks, invites) so
+   * the row can actually be deleted. Nulls out stores.director_id pointing at
+   * them. Returns false if no such user. Not for production use.
+   */
+  async deleteByTelegramId(telegramId: number): Promise<boolean> {
+    const user = await this.findByTelegramId(telegramId);
+    if (!user) return false;
+    const uid = user.id;
+    const db = this.supabase.db;
+
+    // Reactions/work-items on lifehacks this user authored (from anyone).
+    const { data: authored } = await db.from('lifehacks').select('id').eq('author_id', uid);
+    const lifehackIds = (authored ?? []).map((r: { id: string }) => r.id);
+
+    await db.from('reactions').delete().eq('user_id', uid);
+    await db.from('work_items').delete().eq('user_id', uid);
+    if (lifehackIds.length) {
+      await db.from('reactions').delete().in('lifehack_id', lifehackIds);
+      await db.from('work_items').delete().in('lifehack_id', lifehackIds);
+      await db.from('lifehacks').delete().in('id', lifehackIds);
+    }
+    await db.from('invites').delete().eq('created_by', uid);
+    await db.from('invites').update({ used_by: null }).eq('used_by', uid);
+    await db.from('stores').update({ director_id: null }).eq('director_id', uid);
+
+    const { error } = await db.from('users').delete().eq('id', uid);
+    if (error) throw error;
+    return true;
+  }
+
   async me(userId: string): Promise<UserRow> {
     return this.requireUser(userId);
   }
