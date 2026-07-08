@@ -118,10 +118,22 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       const username = this.config.get<string>('BOT_USERNAME');
       const dirLink = `https://t.me/${username}?start=dir_${storeId}`;
       const sellerLink = `https://t.me/${username}?start=store_${storeId}`;
+
+      // Telegram's built-in share sheet: one tap opens the chat picker with the
+      // link pre-filled, so the admin/director forwards without copy-paste.
+      const shareUrl = (link: string, text: string): string =>
+        `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
+      const kb = new InlineKeyboard()
+        .url('📤 Переслати директору', shareUrl(dirLink, 'Долучайся до BOOST як директор магазину:'))
+        .row()
+        .url('📤 Переслати продавцям', shareUrl(sellerLink, 'Долучайся до BOOST — база кейсів магазину:'));
+
       await ctx.reply(
         `✅ Магазин «${storeName}» створено.\n\n` +
-          `👔 Посилання для директора (надішли особисто):\n${dirLink}\n\n` +
-          `🧑‍💼 Посилання для продавців (директор пересилає команді):\n${sellerLink}`,
+          `👔 Директору (надішли особисто):\n${dirLink}\n\n` +
+          `🧑‍💼 Продавцям (директор пересилає команді):\n${sellerLink}\n\n` +
+          `Натисни кнопку нижче, щоб переслати в один тап.`,
+        { reply_markup: kb },
       );
     } catch (e) {
       await ctx.reply(`❌ ${(e as Error).message}`);
