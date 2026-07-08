@@ -94,6 +94,7 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     });
     bot.on(':contact', (ctx) => this.onContact(ctx));
     bot.callbackQuery(/^exp:(.+)$/, (ctx) => this.onExperience(ctx));
+    bot.callbackQuery(/^ns:(confirm|edit)$/, (ctx) => this.onNewStoreConfirm(ctx));
     bot.on('message:text', (ctx) => this.onText(ctx));
     bot.catch((err) => this.logger.error(`Bot error: ${err.message}`));
   }
@@ -143,6 +144,32 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     await ctx.reply('Введи назву магазину (напр. «Обухів»):');
   }
 
+  /** Handles the ✅ Підтвердити / ✏️ Змінити buttons on the confirmation prompt. */
+  private async onNewStoreConfirm(ctx: Context): Promise<void> {
+    const tgId = ctx.from?.id;
+    if (!tgId) return;
+    await ctx.answerCallbackQuery();
+
+    const action = (ctx.match as RegExpMatchArray)[1];
+    const pendingKey = `pendingStoreName:${tgId}`;
+    const name = await this.redis.client.get(pendingKey);
+
+    if (action === 'edit') {
+      await this.redis.client.del(pendingKey);
+      await this.redis.client.set(`awaitStoreName:${tgId}`, '1', 'EX', 300);
+      await ctx.reply('Введи назву магазину (напр. «Обухів»):');
+      return;
+    }
+
+    // confirm
+    if (!name) {
+      await ctx.reply('⌛️ Назва не збереглася. Натисни 🏪 Створити магазин ще раз.');
+      return;
+    }
+    await this.redis.client.del(pendingKey);
+    await this.createStoreAndReply(ctx, name);
+  }
+
   private async createStoreAndReply(ctx: Context, storeName: string): Promise<void> {
     try {
       const { storeId } = await this.users.createPilotStore(storeName);
@@ -161,9 +188,9 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
 
       await ctx.reply(
         `✅ Магазин «${storeName}» створено.\n\n` +
-          `👔 Директору (надішли особисто):\n${dirLink}\n\n` +
-          `🧑‍💼 Продавцям (директор пересилає команді):\n${sellerLink}\n\n` +
-          `Натисни кнопку нижче, щоб переслати в один тап.`,
+          `👔 Директору — надішли посилання особисто.\n` +
+          `🧑‍💼 Продавцям — директор пересилає команді.\n\n` +
+          `Обери, кому переслати:`,
         { reply_markup: kb },
       );
     } catch (e) {
@@ -339,7 +366,12 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       const name = ctx.message?.text?.trim();
       if (!name) return;
       await this.redis.client.del(awaitKey);
-      await this.createStoreAndReply(ctx, name);
+      // Stash the name and ask for confirmation before writing to the DB.
+      await this.redis.client.set(`pendingStoreName:${tgId}`, name, 'EX', 300);
+      const kb = new InlineKeyboard()
+        .text('✅ Підтвердити', 'ns:confirm')
+        .text('✏️ Змінити', 'ns:edit');
+      await ctx.reply(`Створити магазин «${name}»?`, { reply_markup: kb });
       return;
     }
 
