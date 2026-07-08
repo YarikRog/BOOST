@@ -19,6 +19,8 @@ interface OnboardState {
   storeAssigned?: boolean; // true when store_id is already set (e.g. dir_<storeId> pilot link)
 }
 
+const ADMIN_NEW_STORE_BTN = '🏪 Створити магазин';
+
 const EXPERIENCE_LABELS: Record<Experience, string> = {
   [Experience.lt_6m]: 'До 6 місяців',
   [Experience['6m_2y']]: 'Від 6 місяців до 2 років',
@@ -86,6 +88,10 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     bot.command('app', (ctx) => this.sendAppButton(ctx));
     bot.command('newstore', (ctx) => this.onNewStore(ctx));
     bot.command('reset', (ctx) => this.onReset(ctx));
+    bot.hears(ADMIN_NEW_STORE_BTN, (ctx) => {
+      const tgId = ctx.from?.id;
+      return tgId ? this.promptStoreName(ctx, tgId) : Promise.resolve();
+    });
     bot.on(':contact', (ctx) => this.onContact(ctx));
     bot.callbackQuery(/^exp:(.+)$/, (ctx) => this.onExperience(ctx));
     bot.on('message:text', (ctx) => this.onText(ctx));
@@ -110,10 +116,34 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
 
     const storeName = (ctx.match as string | undefined)?.trim();
     if (!storeName) {
-      await ctx.reply('Вкажи назву магазину: /newstore Comfy Лавіна');
+      // No name given → start the interactive flow (same as the keyboard button).
+      await this.promptStoreName(ctx, tgId);
       return;
     }
+    await this.createStoreAndReply(ctx, storeName);
+  }
 
+  /** Reply keyboard shown to admins so store creation is one tap away. */
+  private adminKeyboard(): Keyboard {
+    return new Keyboard().text(ADMIN_NEW_STORE_BTN).resized();
+  }
+
+  private isAdmin(role: UserRole): boolean {
+    return role === UserRole.MEGA_ADMIN || role === UserRole.REGIONAL_IT_LEAD;
+  }
+
+  /** Button/`/newstore` with no name → ask for the store name (state in Redis). */
+  private async promptStoreName(ctx: Context, tgId: number): Promise<void> {
+    const caller = await this.users.findByTelegramId(tgId);
+    if (!caller || !this.isAdmin(caller.role)) {
+      await ctx.reply('🔒 Команда лише для адміністратора.');
+      return;
+    }
+    await this.redis.client.set(`awaitStoreName:${tgId}`, '1', 'EX', 300);
+    await ctx.reply('Введи назву магазину (напр. «Обухів»):');
+  }
+
+  private async createStoreAndReply(ctx: Context, storeName: string): Promise<void> {
     try {
       const { storeId } = await this.users.createPilotStore(storeName);
       const username = this.config.get<string>('BOT_USERNAME');
@@ -150,7 +180,10 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     // Already onboarded — re-entry regardless of which link they used.
     const existing = await this.users.findByTelegramId(tgId);
     if (existing && existing.phone && existing.experience_segment) {
-      await ctx.reply(`Вітаю знову! Роль: ${existing.role}`);
+      await ctx.reply(
+        `Вітаю знову! Роль: ${existing.role}`,
+        this.isAdmin(existing.role) ? { reply_markup: this.adminKeyboard() } : undefined,
+      );
       await this.sendAppButton(ctx);
       return;
     }
@@ -299,6 +332,17 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
   private async onText(ctx: Context): Promise<void> {
     const tgId = ctx.from?.id;
     if (!tgId) return;
+
+    // Admin "create store" flow: waiting for the store name (set by button/`/newstore`).
+    const awaitKey = `awaitStoreName:${tgId}`;
+    if (await this.redis.client.get(awaitKey)) {
+      const name = ctx.message?.text?.trim();
+      if (!name) return;
+      await this.redis.client.del(awaitKey);
+      await this.createStoreAndReply(ctx, name);
+      return;
+    }
+
     const state = await this.getState(tgId);
     if (!state || state.step !== 'store') return; // ignore free text outside the store step
 
