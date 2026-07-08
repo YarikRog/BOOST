@@ -95,6 +95,18 @@ export class UsersService {
    * new store id; the caller builds the dir_/store_ deep links.
    */
   async createPilotStore(storeName: string): Promise<{ storeId: string }> {
+    // Reject duplicates (case-insensitive) so we don't get several stores
+    // sharing a name.
+    const { data: dupe, error: dupeErr } = await this.supabase.db
+      .from('stores')
+      .select('id')
+      .ilike('name', storeName)
+      .maybeSingle();
+    if (dupeErr) throw dupeErr;
+    if (dupe) {
+      throw new BadRequestException(`Магазин «${storeName}» вже існує. Обери іншу назву.`);
+    }
+
     const { data: region, error: regionErr } = await this.supabase.db
       .from('regions')
       .insert({ name: `Pilot — ${storeName}` })
