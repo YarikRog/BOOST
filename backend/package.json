@@ -9,7 +9,8 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main.js",
     "lint": "eslint \"src/**/*.ts\" --fix",
-    "migrate": "node ./scripts/run-migrations.js"
+    "migrate": "node ./scripts/run-migrations.js",
+    "create-pilot-store": "node ./scripts/create-pilot-store.js"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",

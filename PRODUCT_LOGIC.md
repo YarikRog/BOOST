@@ -34,6 +34,18 @@ Situational model, AI classification, auto-tagging, recommendation engine, conte
 - No hard deletes. Only status changes (`active`/`inactive`/`archived`).
 - Deactivated author: lifehack stays, author display becomes "Колишній співробітник" / "Архівний автор" (no name).
 
+### Pilot exception — store #1 (no hierarchy)
+
+The first pilot store skips the invite chain entirely: `scripts/create-pilot-store.js`
+creates the region+store directly, printing two non-expiring deep links —
+`?start=dir_<storeId>` (DIRECTOR, hand to them privately) and `?start=store_<storeId>`
+(SELLER, director forwards to the team). `bot.service.ts` `onStart()` handles these
+before falling back to the invite-token path. Everyone still lands in the same
+`users`/`stores` rows as the invite flow, so store #1 can be switched to invites
+later, or left as-is while stores #2+ onboard through the normal
+`REGIONAL_IT_LEAD → DIRECTOR → DEP_DIRECTOR/SELLER` chain. No schema change needed
+to add hierarchy-based stores alongside it.
+
 ## 2. Experience segmentation (Layer 1)
 
 - Asked once at first login: "Скільки часу ви працюєте в Comfy?" — `<6m` / `6m–2y` / `2y+`.

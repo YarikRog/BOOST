@@ -132,6 +132,38 @@ export class UsersService {
     return store as { id: string };
   }
 
+  /**
+   * Pilot-mode join: a shared, non-expiring "store_<id>" / "dir_<id>" deep
+   * link (bot.service.ts) instead of a single-use invite. Only for store #1
+   * running without the referral hierarchy — see PRODUCT_LOGIC.md pilot note.
+   * Idempotent: re-entry by an already-known telegram_id returns the existing row.
+   */
+  async joinStoreDirect(
+    telegramId: number,
+    storeId: string,
+    role: UserRole.SELLER | UserRole.DIRECTOR,
+    name?: string,
+  ): Promise<UserRow> {
+    const existing = await this.findByTelegramId(telegramId);
+    if (existing) return existing;
+
+    const { data: store, error: storeErr } = await this.supabase.db
+      .from('stores')
+      .select('id, region_id')
+      .eq('id', storeId)
+      .maybeSingle();
+    if (storeErr) throw storeErr;
+    if (!store) throw new BadRequestException('Store link is invalid.');
+
+    return this.create({
+      telegramId,
+      name,
+      role,
+      regionId: (store as { region_id: string }).region_id,
+      storeId: (store as { id: string }).id,
+    });
+  }
+
   async me(userId: string): Promise<UserRow> {
     return this.requireUser(userId);
   }

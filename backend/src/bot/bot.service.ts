@@ -16,6 +16,7 @@ interface OnboardState {
   userId: string;
   role: UserRole;
   step: OnboardStep;
+  storeAssigned?: boolean; // true when store_id is already set (e.g. dir_<storeId> pilot link)
 }
 
 const EXPERIENCE_LABELS: Record<Experience, string> = {
@@ -87,9 +88,17 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     const tgId = ctx.from?.id;
     if (!tgId) return;
     const name = [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || undefined;
-    const token = (ctx.match as string | undefined)?.trim();
+    const payload = (ctx.match as string | undefined)?.trim();
 
-    if (!token) {
+    // Already onboarded — re-entry regardless of which link they used.
+    const existing = await this.users.findByTelegramId(tgId);
+    if (existing && existing.phone && existing.experience_segment) {
+      await ctx.reply(`Вітаю знову! Роль: ${existing.role}`);
+      await this.sendAppButton(ctx);
+      return;
+    }
+
+    if (!payload) {
       // No token — try bootstrapping the first MEGA_ADMIN, else deny.
       const admin = await this.users.bootstrapAdminIfEligible(tgId, name);
       if (admin) {
@@ -104,8 +113,26 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       return;
     }
 
+    // Pilot mode: "store_<storeId>" (SELLER) / "dir_<storeId>" (DIRECTOR) —
+    // no invite row, no single-use token. Used for store #1 while it runs
+    // without the referral hierarchy (see PRODUCT_LOGIC.md pilot note).
+    const storeLinkMatch = payload.match(/^(store|dir)_(.+)$/);
+    if (storeLinkMatch) {
+      try {
+        const [, kind, storeId] = storeLinkMatch;
+        const role = kind === 'dir' ? UserRole.DIRECTOR : UserRole.SELLER;
+        const user = await this.users.joinStoreDirect(tgId, storeId, role, name);
+        await this.setState(tgId, { userId: user.id, role: user.role, step: 'phone', storeAssigned: true });
+        await ctx.reply(`Вітаємо! Роль: ${user.role}. Завершимо вхід.`);
+        await this.askPhone(ctx);
+      } catch (e) {
+        await ctx.reply(`❌ ${(e as Error).message}`);
+      }
+      return;
+    }
+
     try {
-      const { user, needsStoreCreation } = await this.invites.consume(token, { id: tgId, name });
+      const { user, needsStoreCreation } = await this.invites.consume(payload, { id: tgId, name });
       // If already fully onboarded, just greet + app button.
       if (user.phone && user.experience_segment && !needsStoreCreation) {
         await ctx.reply(`Вітаю знову! Роль: ${user.role}`);
@@ -162,7 +189,7 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
 
     await this.users.setExperience(state.userId, segment);
 
-    if (state.role === UserRole.DIRECTOR) {
+    if (state.role === UserRole.DIRECTOR && !state.storeAssigned) {
       state.step = 'store';
       await this.setState(tgId, state);
       await ctx.reply('Введіть назву вашого магазину:');
