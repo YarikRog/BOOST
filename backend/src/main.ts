@@ -15,4 +15,7 @@ async function bootstrap(): Promise<void> {
   new Logger('Bootstrap').log(`Backend listening on :${port}`);
 }
 
-void bootstrap();
+bootstrap().catch((err) => {
+  new Logger('Bootstrap').error(`Fatal startup error: ${err.message}`, err.stack);
+  process.exit(1);
+});

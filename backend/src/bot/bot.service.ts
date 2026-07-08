@@ -50,9 +50,13 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     }
     this.bot = new Bot(token);
     this.registerHandlers(this.bot);
-    void this.bot.start({
-      onStart: (info) => this.logger.log(`Bot @${info.username} started (long-polling)`),
-    });
+    this.bot
+      .start({
+        onStart: (info) => this.logger.log(`Bot @${info.username} started (long-polling)`),
+      })
+      .catch((err) => {
+        this.logger.error(`Bot failed to start — check TELEGRAM_BOT_TOKEN: ${err.message}`);
+      });
   }
 
   async onModuleDestroy(): Promise<void> {
