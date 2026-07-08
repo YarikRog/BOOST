@@ -80,12 +80,52 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
 
   // ── Handlers ────────────────────────────────────────────────
   private registerHandlers(bot: Bot): void {
+    // Commands first — the generic message:text handler below stops the chain
+    // when it has nothing to do, so it must be registered last.
     bot.command('start', (ctx) => this.onStart(ctx));
+    bot.command('app', (ctx) => this.sendAppButton(ctx));
+    bot.command('newstore', (ctx) => this.onNewStore(ctx));
     bot.on(':contact', (ctx) => this.onContact(ctx));
     bot.callbackQuery(/^exp:(.+)$/, (ctx) => this.onExperience(ctx));
     bot.on('message:text', (ctx) => this.onText(ctx));
-    bot.command('app', (ctx) => this.sendAppButton(ctx));
     bot.catch((err) => this.logger.error(`Bot error: ${err.message}`));
+  }
+
+  /**
+   * Admin-only: `/newstore <name>` creates a pilot store (region+store) and
+   * replies with the two non-expiring deep links. Only MEGA_ADMIN /
+   * REGIONAL_IT_LEAD may run it — this is how store #1 is provisioned without
+   * the invite hierarchy (see PRODUCT_LOGIC.md pilot note).
+   */
+  private async onNewStore(ctx: Context): Promise<void> {
+    const tgId = ctx.from?.id;
+    if (!tgId) return;
+
+    const caller = await this.users.findByTelegramId(tgId);
+    if (!caller || (caller.role !== UserRole.MEGA_ADMIN && caller.role !== UserRole.REGIONAL_IT_LEAD)) {
+      await ctx.reply('🔒 Команда лише для адміністратора.');
+      return;
+    }
+
+    const storeName = (ctx.match as string | undefined)?.trim();
+    if (!storeName) {
+      await ctx.reply('Вкажи назву магазину: /newstore Comfy Лавіна');
+      return;
+    }
+
+    try {
+      const { storeId } = await this.users.createPilotStore(storeName);
+      const username = this.config.get<string>('BOT_USERNAME');
+      const dirLink = `https://t.me/${username}?start=dir_${storeId}`;
+      const sellerLink = `https://t.me/${username}?start=store_${storeId}`;
+      await ctx.reply(
+        `✅ Магазин «${storeName}» створено.\n\n` +
+          `👔 Посилання для директора (надішли особисто):\n${dirLink}\n\n` +
+          `🧑‍💼 Посилання для продавців (директор пересилає команді):\n${sellerLink}`,
+      );
+    } catch (e) {
+      await ctx.reply(`❌ ${(e as Error).message}`);
+    }
   }
 
   private async onStart(ctx: Context): Promise<void> {

@@ -89,6 +89,29 @@ export class UsersService {
     if (error) throw error;
   }
 
+  /**
+   * Pilot-mode: create a region + store in one shot (no invite hierarchy),
+   * so a MEGA_ADMIN can spin up store #1 straight from the bot. Returns the
+   * new store id; the caller builds the dir_/store_ deep links.
+   */
+  async createPilotStore(storeName: string): Promise<{ storeId: string }> {
+    const { data: region, error: regionErr } = await this.supabase.db
+      .from('regions')
+      .insert({ name: `Pilot — ${storeName}` })
+      .select('id')
+      .single();
+    if (regionErr) throw regionErr;
+
+    const { data: store, error: storeErr } = await this.supabase.db
+      .from('stores')
+      .insert({ name: storeName, region_id: (region as { id: string }).id })
+      .select('id')
+      .single();
+    if (storeErr) throw storeErr;
+
+    return { storeId: (store as { id: string }).id };
+  }
+
   /** MEGA_ADMIN creates a region (needed before inviting a REGIONAL_IT_LEAD). */
   async createRegion(name: string): Promise<{ id: string; name: string }> {
     const { data, error } = await this.supabase.db
