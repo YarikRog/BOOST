@@ -4,9 +4,22 @@ const tg = window.Telegram && window.Telegram.WebApp;
 const initData = tg ? tg.initData : '';
 const LIVE = !!initData; // inside Telegram with initData → talk to the backend
 const SLUG_FOR = { it: 'it_service', happy: 'happy_service' };
+const TAB_FOR = { it_service: 'it', happy_service: 'happy' };
+const PRODUCTS = {
+  it_service: ['Смартфони', 'Планшети', 'Ноутбуки'],
+  happy_service: ['Холодильники', 'Пральні машини', 'Телевізори'],
+};
+const ROLE_LABELS = {
+  MEGA_ADMIN: 'Адміністратор',
+  REGIONAL_IT_LEAD: 'Регіональний ІТ-лід',
+  DIRECTOR: 'Директор магазину',
+  DEP_DIRECTOR: 'Заступник директора',
+  SELLER: 'Продавець',
+};
 let catBySlug = {}; // slug → {id, name}
+let me = null;      // current user (live mode)
 
-// ---- mock data (demo mode, outside Telegram): RESULT social-proof, not likes ----
+// ---- mock data (demo mode, outside Telegram) ----
 const DATA = {
   it: [
     {cat:'IT Service',tier:'TOP',title:'Гарантія через питання, а не через тиск',
@@ -19,14 +32,8 @@ const DATA = {
      sub:'Ноутбуки · купує вперше',
      rate:74,tried:19,ok:14,author:'Region Lead',
      sit:'Клієнт вперше купує ноутбук і трохи губиться.',
-     do:'Пропоную забрати вже готовий до роботи: оновлення, антивірус, перенос даних. «Заберете і одразу працюєте, без мороки».',
-     why:'Знімаю страх «я сам не розберусь» — продаю спокій, а не послугу.'},
-    {cat:'IT Service',tier:'NEW',title:'Порівняння двох сервісів замість «так/ні»',
-     sub:'Техніка для дому',
-     rate:0,tried:0,ok:0,author:'Іван Коваль',
-     sit:'Клієнт відмовляється від сервісу одразу.',
-     do:'Показую два пакети поруч. Питання вже не «брати чи ні», а «який з двох».',
-     why:'Зміщую вибір — і відмова стає рідшою.'}
+     do:'Пропоную забрати вже готовий до роботи: оновлення, антивірус, перенос даних.',
+     why:'Знімаю страх «я сам не розберусь» — продаю спокій, а не послугу.'}
   ],
   happy: [
     {cat:'Happy Service',tier:'TOP',title:'Емоція до того, як назвав ціну',
@@ -38,7 +45,7 @@ const DATA = {
   ]
 };
 
-let curCat='it', curItem=null, curList=DATA.it;
+let curCat='it', curItem=null, curList=DATA.it, createSlug='it_service';
 
 // ===== API helpers =====
 function api(path, opts){
@@ -51,14 +58,32 @@ function api(path, opts){
 }
 
 function tierOf(tried){ return tried>=10 ? 'TOP' : (tried>0 ? 'GROWING' : 'NEW'); }
+function isMine(item){ return LIVE && me && item && item.author_id === me.id; }
 
-// Normalize a backend feed row into the card shape the UI already renders.
 function normLive(x, catName){
   return {
-    id:x.id, cat:catName, tier:tierOf(x.tried||0), title:x.title,
+    id:x.id, author_id:x.author_id, cat:catName, tier:tierOf(x.tried||0), title:x.title,
     sub:x.product_type||'', rate:x.rate||0, tried:x.tried||0, ok:x.ok||0,
     author:x.author||'Продавець', sit:x.sit||'', do:x.do||'', why:x.why||''
   };
+}
+
+function loadMe(){
+  return api('/auth/telegram', {
+    method:'POST', headers:{ 'content-type':'application/json' },
+    body: JSON.stringify({ initData })
+  }).then(u => {
+    me = u;
+    // Header
+    document.querySelector('.store .meta b').textContent = 'Comfy · ' + (u.storeName || 'магазин');
+    document.getElementById('roleline').textContent = ROLE_LABELS[u.role] || 'Продавець';
+    // Profile
+    const nm = u.name || 'Продавець';
+    document.querySelector('.prof-top .avatar').textContent = nm.trim().charAt(0).toUpperCase() || 'П';
+    document.querySelector('.prof-top b').textContent = nm;
+    document.querySelector('.prof-top div div').textContent =
+      (ROLE_LABELS[u.role]||'Продавець') + ' · Comfy ' + (u.storeName || '');
+  });
 }
 
 function loadCats(){
@@ -77,7 +102,7 @@ function loadFeed(tabKey){
     .catch(e => { curList=[]; renderFeed(); toast('⚠️ '+e.message.slice(0,60)); });
 }
 
-// ===== Rendering =====
+// ===== Feed rendering =====
 function renderFeed(){
   const list = curList || [];
   if(!list.length){
@@ -85,12 +110,9 @@ function renderFeed(){
       '<div class="card" style="cursor:default"><div class="sub">Поки що немає кейсів у цій категорії. Додай перший через «+».</div></div>';
     return;
   }
-  document.getElementById('feed-list').innerHTML = list.map((d,i)=>`
-    <div class="card" onclick="openDetail(${i})">
-      <span class="cat">${d.cat}</span><span class="tier">${d.tier}</span>
-      <h3>${d.title}</h3>
-      <div class="sub">${d.sub}</div>
-      ${d.tried>0 ? `
+  document.getElementById('feed-list').innerHTML = list.map((d,i)=>{
+    const mine = isMine(d);
+    const proof = d.tried>0 ? `
       <div class="proof">
         <div class="big">${d.rate}%</div>
         <div class="bar"><i style="width:${d.rate}%"></i></div>
@@ -98,15 +120,26 @@ function renderFeed(){
       </div>` : `
       <div class="proof" style="background:#f1f5f9">
         <div class="txt" style="color:#64748b">Новий кейс — ще немає підтверджень. Будь першим, хто спробує.</div>
-      </div>`}
+      </div>`;
+    const foot = mine ? `
+      <div class="foot"><span class="who">Твій кейс</span>
+        <span style="font-size:12px;color:var(--good)">🟢 опубліковано</span></div>` : `
       <div class="foot">
         <span class="who">${d.author}</span>
         <div class="react">
           <button onclick="event.stopPropagation();tog(this)">👍</button>
           <button onclick="event.stopPropagation();tog(this)">👎</button>
         </div>
-      </div>
-    </div>`).join('');
+      </div>`;
+    return `
+    <div class="card" onclick="openDetail(${i})">
+      <span class="cat">${d.cat}</span><span class="tier">${d.tier}</span>
+      <h3>${d.title}</h3>
+      <div class="sub">${d.sub}</div>
+      ${proof}
+      ${foot}
+    </div>`;
+  }).join('');
 }
 
 function switchCat(el,c){
@@ -118,6 +151,7 @@ function switchCat(el,c){
 function openDetail(i){
   curItem=curList[i];
   const d=curItem;
+  const mine = isMine(d);
   document.getElementById('d-cat').className='card cat';
   document.getElementById('d-cat').outerHTML=`<span class="cat" id="d-cat">${d.cat}</span>`;
   document.getElementById('d-title').textContent=d.title;
@@ -129,16 +163,27 @@ function openDetail(i){
   document.getElementById('d-do').textContent=d.do;
   document.getElementById('d-why').textContent=d.why;
   document.getElementById('d-author').textContent='Автор: '+d.author;
+  // You cannot take or react to your own case.
+  document.getElementById('d-react-card').classList.toggle('hidden', mine);
+  document.getElementById('d-take').classList.toggle('hidden', mine);
+  document.getElementById('d-mine-note').classList.toggle('hidden', !mine);
   const t=document.getElementById('d-take'); t.className='take'; t.textContent='📌 Беру в роботу';
+  if(mine) t.classList.add('hidden');
   show('detail');
 }
 
-let inWork=2;
+let inWork=0;
 function takeIt(){
   const t=document.getElementById('d-take');
   t.className='take taken'; t.textContent='✓ В роботі — спитаємо результат за 7 днів';
-  inWork++; document.getElementById('inwork-count').textContent=inWork+' кейси в роботі';
+  inWork++; updateInwork();
   toast('Додано в роботу 📌');
+}
+function updateInwork(){
+  const el=document.getElementById('inwork-count');
+  const banner=document.querySelector('.inwork');
+  if(inWork>0){ el.textContent=inWork+' кейс(и) в роботі'; banner.style.display='flex'; }
+  else banner.style.display='none';
 }
 
 function tog(b){
@@ -153,49 +198,69 @@ function show(s){
   });
   document.getElementById('nav-feed').classList.toggle('on', s==='feed'||s==='detail');
   document.getElementById('nav-profile').classList.toggle('on', s==='profile');
-  document.getElementById('hint').style.display = s==='feed' ? 'flex':'none';
+  document.getElementById('hint').style.display = (s==='feed' && !LIVE) ? 'flex':'none';
   document.getElementById('screen-'+s).scrollTop=0;
 }
 
 function openConfirm(){ document.getElementById('sheet').classList.add('show'); }
 function resolveDemo(msg){
   document.getElementById('sheet').classList.remove('show');
-  inWork=Math.max(0,inWork-1);
-  document.getElementById('inwork-count').textContent = inWork>0 ? inWork+' кейси в роботі' : 'Немає кейсів у роботі';
+  inWork=Math.max(0,inWork-1); updateInwork();
   toast(msg);
 }
 
-// Select one chip within its group (category / product).
+// ===== Create flow (minimal taps) =====
 function selectChip(el){
   el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
   el.classList.add('on');
+  if(el.parentElement.id==='cat-chips'){
+    createSlug = el.getAttribute('data-slug');
+    renderProducts(createSlug);
+  }
+}
+
+function renderProducts(slug){
+  const list = PRODUCTS[slug] || [];
+  document.getElementById('prod-chips').innerHTML = list.map((p,i)=>
+    `<div class="chip${i===0?' on':''}" onclick="selectChip(this)">${p}</div>`).join('');
+}
+
+// "+" → prep the create screen: category pre-selected from the current feed tab.
+function openCreate(){
+  createSlug = SLUG_FOR[curCat] || 'it_service';
+  document.querySelectorAll('#cat-chips .chip').forEach(c=>
+    c.classList.toggle('on', c.getAttribute('data-slug')===createSlug));
+  renderProducts(createSlug);
+  show('create');
 }
 
 function publish(){
-  if(!LIVE){ toast('Кейс опубліковано ✅'); setTimeout(()=>show('feed'),700); return; }
-  const catEl = document.querySelector('#cat-chips .chip.on');
   const prodEl = document.querySelector('#prod-chips .chip.on');
-  const title = (document.getElementById('c-title').value||'').trim();
+  let title = (document.getElementById('c-title').value||'').trim();
   const body = (document.getElementById('c-body').value||'').trim();
-  if(!title){ toast('Додай заголовок'); return; }
+  if(!body){ toast('Опиши кейс кількома словами'); return; }
+  if(!title) title = body.split(/[.!?\n]/)[0].slice(0,60); // derive from first sentence
+
+  if(!LIVE){ toast('Кейс опубліковано ✅'); setTimeout(()=>show('feed'),700); return; }
+
   const payload = {
-    categorySlug: catEl ? catEl.getAttribute('data-slug') : 'it_service',
+    categorySlug: createSlug,
     productType: prodEl ? prodEl.textContent.trim() : '',
     title,
     content: { do: body }
   };
   api('/lifehacks', {
-    method:'POST',
-    headers:{ 'content-type':'application/json' },
+    method:'POST', headers:{ 'content-type':'application/json' },
     body: JSON.stringify(payload)
   }).then(()=>{
     toast('Кейс опубліковано ✅');
     document.getElementById('c-title').value='';
     document.getElementById('c-body').value='';
-    // reload the feed tab matching the published category
-    const tabKey = (payload.categorySlug==='happy_service') ? 'happy' : 'it';
+    const tabKey = TAB_FOR[createSlug] || 'it';
     curCat = tabKey;
-    document.querySelectorAll('.tab').forEach((t,idx)=>t.classList.toggle('on', (idx===0)===(tabKey==='it')));
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+    const tabEls = document.querySelectorAll('.tab');
+    (tabKey==='it' ? tabEls[0] : tabEls[1]).classList.add('on');
     loadFeed(tabKey);
     setTimeout(()=>show('feed'),700);
   }).catch(e => toast('⚠️ '+e.message.slice(0,60)));
@@ -218,41 +283,36 @@ function toast(m){
 }
 
 // ===== Init =====
+renderProducts('it_service');
 if(LIVE){
   try{ tg.ready(); tg.expand(); }catch(e){}
-  loadCats().then(()=>loadFeed('it')).catch(e=>{ curList=[]; renderFeed(); toast('⚠️ '+e.message.slice(0,60)); });
+  // In live mode the prototype scaffolding is off.
+  const ribbon=document.querySelector('.ribbon'); if(ribbon) ribbon.style.display='none';
+  const hint=document.getElementById('hint'); if(hint) hint.style.display='none';
+  updateInwork(); // hides the banner while work-items aren't wired yet
+  loadMe()
+    .then(loadCats)
+    .then(()=>loadFeed('it'))
+    .catch(e=>{ curList=[]; renderFeed(); toast('⚠️ '+e.message.slice(0,70)); });
 } else {
   curList = DATA.it; renderFeed();
 }
 
-// Theme management
+// ===== Theme =====
 function applyTheme(theme){
   const phone=document.querySelector('.phone');
   const toggle=document.getElementById('theme-toggle');
-  if(theme==='dark'){
-    phone.classList.add('dark');
-    toggle.textContent='☀️';
-  } else {
-    phone.classList.remove('dark');
-    toggle.textContent='🌙';
-  }
+  if(theme==='dark'){ phone.classList.add('dark'); toggle.textContent='☀️'; }
+  else { phone.classList.remove('dark'); toggle.textContent='🌙'; }
   localStorage.setItem('theme',theme);
 }
-
 function toggleTheme(){
   const phone=document.querySelector('.phone');
-  const isDark=phone.classList.contains('dark');
-  applyTheme(isDark?'light':'dark');
+  applyTheme(phone.classList.contains('dark')?'light':'dark');
 }
-
-// Initialize theme
 const saved=localStorage.getItem('theme');
 const pref=window.matchMedia('(prefers-color-scheme:dark)').matches;
-const initial=saved||( pref?'dark':'light');
-applyTheme(initial);
+applyTheme(saved||(pref?'dark':'light'));
 
 // Hide splash after animation
-setTimeout(()=>{
-  const splash=document.getElementById('splash');
-  if(splash) splash.style.display='none';
-},1200);
+setTimeout(()=>{ const s=document.getElementById('splash'); if(s) s.style.display='none'; },1200);

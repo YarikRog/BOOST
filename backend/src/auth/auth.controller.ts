@@ -19,6 +19,7 @@ export class AuthController {
     const tgUser = this.auth.validate(body.initData);
     const appUser = await this.users.findByTelegramId(tgUser.id);
     if (!appUser) throw new UnauthorizedException('User not onboarded.');
-    return appUser;
+    const storeName = await this.users.storeName(appUser.store_id);
+    return { ...appUser, storeName };
   }
 }

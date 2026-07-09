@@ -57,7 +57,7 @@
       <div class="block"><div class="lab">Що кажу / роблю</div><p id="d-do"></p></div>
       <div class="block"><div class="lab">Чому спрацьовує</div><p id="d-why"></p></div>
 
-      <div class="card" style="cursor:default;margin-top:14px">
+      <div class="card" style="cursor:default;margin-top:14px" id="d-react-card">
         <div class="foot">
           <span class="who" id="d-author"></span>
           <div class="react">
@@ -68,6 +68,7 @@
       </div>
 
       <button class="take" id="d-take" onclick="takeIt()">📌 Беру в роботу</button>
+      <div id="d-mine-note" class="hidden" style="text-align:center;color:var(--muted);font-size:13px;margin-top:14px">Це твій кейс — його підтверджують інші продавці.</div>
     </div>
   </div>
 
@@ -92,15 +93,10 @@
       </div>
 
       <div class="fieldlab">Товар</div>
-      <div class="chips" id="prod-chips">
-        <div class="chip on" onclick="selectChip(this)">Ноутбуки</div>
-        <div class="chip" onclick="selectChip(this)">ТВ</div>
-        <div class="chip" onclick="selectChip(this)">Смартфони</div>
-        <div class="chip" onclick="selectChip(this)">Техніка для дому</div>
-      </div>
+      <div class="chips" id="prod-chips"></div>
 
-      <div class="fieldlab">Заголовок</div>
-      <input id="c-title" type="text" placeholder="Коротко: суть прийому"
+      <div class="fieldlab">Заголовок <span style="font-weight:400;color:var(--muted)">(необов'язково)</span></div>
+      <input id="c-title" type="text" placeholder="Якщо пусто — візьмемо з опису"
         style="width:100%;border:1px solid var(--line);border-radius:13px;padding:12px;font-size:14px;font-family:inherit" />
 
       <div class="fieldlab">Опиши кейс</div>
@@ -159,7 +155,7 @@
   <!-- BOTTOM NAV -->
   <div class="nav">
     <div class="n on" id="nav-feed" onclick="show('feed')"><span class="gl">📰</span>Стрічка</div>
-    <div class="plus" onclick="show('create')">+</div>
+    <div class="plus" onclick="openCreate()">+</div>
     <div class="n" id="nav-profile" onclick="show('profile')"><span class="gl">👤</span>Профіль</div>
   </div>
 </div>

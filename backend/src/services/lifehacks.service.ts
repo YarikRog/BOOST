@@ -92,6 +92,7 @@ export class LifehacksService {
           title: r.title,
           product_type: r.product_type,
           author,
+          author_id: r.author_id,
           tried,
           ok,
           rate: tried > 0 ? Math.round((ok / tried) * 100) : 0,

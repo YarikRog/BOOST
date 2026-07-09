@@ -283,6 +283,17 @@ export class UsersService {
     return this.requireUser(userId);
   }
 
+  /** Display name of a store (for the WebApp header/profile). */
+  async storeName(storeId: string | null): Promise<string | null> {
+    if (!storeId) return null;
+    const { data } = await this.supabase.db
+      .from('stores')
+      .select('name')
+      .eq('id', storeId)
+      .maybeSingle();
+    return (data as { name: string } | null)?.name ?? null;
+  }
+
   private async requireUser(userId: string): Promise<UserRow> {
     const { data, error } = await this.supabase.db
       .from('users')
