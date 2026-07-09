@@ -88,6 +88,8 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     bot.command('app', (ctx) => this.sendAppButton(ctx));
     bot.command('newstore', (ctx) => this.onNewStore(ctx));
     bot.command('reset', (ctx) => this.onReset(ctx));
+    bot.command('stores', (ctx) => this.onStores(ctx));
+    bot.callbackQuery(/^delstore:(.+)$/, (ctx) => this.onDeleteStore(ctx));
     bot.hears(ADMIN_NEW_STORE_BTN, (ctx) => {
       const tgId = ctx.from?.id;
       return tgId ? this.promptStoreName(ctx, tgId) : Promise.resolve();
@@ -122,6 +124,51 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       return;
     }
     await this.createStoreAndReply(ctx, storeName);
+  }
+
+  /** Admin-only: `/stores` lists every store with a delete button each. */
+  private async onStores(ctx: Context): Promise<void> {
+    const tgId = ctx.from?.id;
+    if (!tgId) return;
+    const caller = await this.users.findByTelegramId(tgId);
+    if (!caller || !this.isAdmin(caller.role)) {
+      await ctx.reply('🔒 Команда лише для адміністратора.');
+      return;
+    }
+
+    const stores = await this.users.listStores();
+    if (!stores.length) {
+      await ctx.reply('Магазинів ще немає. Натисни 🏪 Створити магазин.');
+      return;
+    }
+
+    const kb = new InlineKeyboard();
+    for (const s of stores) {
+      kb.text(`🗑 ${s.name} (${s.id.slice(0, 8)})`, `delstore:${s.id}`).row();
+    }
+    await ctx.reply(`Магазини (${stores.length}). Тисни, щоб видалити порожній:`, { reply_markup: kb });
+  }
+
+  /** Handles the 🗑 delete buttons from /stores. */
+  private async onDeleteStore(ctx: Context): Promise<void> {
+    const tgId = ctx.from?.id;
+    if (!tgId) return;
+    await ctx.answerCallbackQuery();
+    const caller = await this.users.findByTelegramId(tgId);
+    if (!caller || !this.isAdmin(caller.role)) {
+      await ctx.reply('🔒 Команда лише для адміністратора.');
+      return;
+    }
+
+    const storeId = (ctx.match as RegExpMatchArray)[1];
+    try {
+      const res = await this.users.deleteStore(storeId);
+      if (res === 'not_found') await ctx.reply('Магазин уже видалено.');
+      else if (res === 'has_users') await ctx.reply('❌ У магазині є користувачі — спочатку прибери їх через /reset.');
+      else await ctx.reply('🗑 Магазин видалено.');
+    } catch (e) {
+      await ctx.reply(`❌ ${(e as Error).message}`);
+    }
   }
 
   /** Reply keyboard shown to admins so store creation is one tap away. */

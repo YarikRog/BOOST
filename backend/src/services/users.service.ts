@@ -231,6 +231,54 @@ export class UsersService {
     return true;
   }
 
+  /** List all stores (admin cleanup / overview). */
+  async listStores(): Promise<Array<{ id: string; name: string }>> {
+    const { data, error } = await this.supabase.db
+      .from('stores')
+      .select('id, name')
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return (data ?? []) as Array<{ id: string; name: string }>;
+  }
+
+  /**
+   * Delete a store (and its region, if no other store uses it). Refuses if any
+   * user is still attached, so we never orphan people — for cleaning up empty
+   * duplicate stores. Returns 'ok' | 'not_found' | 'has_users'.
+   */
+  async deleteStore(storeId: string): Promise<'ok' | 'not_found' | 'has_users'> {
+    const { data: store, error } = await this.supabase.db
+      .from('stores')
+      .select('id, region_id')
+      .eq('id', storeId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!store) return 'not_found';
+
+    const { count, error: cntErr } = await this.supabase.db
+      .from('users')
+      .select('id', { count: 'exact', head: true })
+      .eq('store_id', storeId);
+    if (cntErr) throw cntErr;
+    if ((count ?? 0) > 0) return 'has_users';
+
+    const regionId = (store as { region_id: string | null }).region_id;
+    const { error: delErr } = await this.supabase.db.from('stores').delete().eq('id', storeId);
+    if (delErr) throw delErr;
+
+    // Drop the region too if nothing else references it (pilot regions are 1:1).
+    if (regionId) {
+      const { count: regUse } = await this.supabase.db
+        .from('stores')
+        .select('id', { count: 'exact', head: true })
+        .eq('region_id', regionId);
+      if ((regUse ?? 0) === 0) {
+        await this.supabase.db.from('regions').delete().eq('id', regionId);
+      }
+    }
+    return 'ok';
+  }
+
   async me(userId: string): Promise<UserRow> {
     return this.requireUser(userId);
   }
