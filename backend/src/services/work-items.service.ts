@@ -33,10 +33,22 @@ export class WorkItemsService {
 
   /** Take a lifehack into work. Enforces the active-work limit + single-active guard. */
   async take(userId: string, lifehackId: string) {
+    // You cannot take your own lifehack into work (you can't confirm yourself).
+    const { data: lh, error: lhErr } = await this.supabase.db
+      .from('lifehacks')
+      .select('author_id')
+      .eq('id', lifehackId)
+      .maybeSingle();
+    if (lhErr) throw lhErr;
+    if (!lh) throw new BadRequestException('Кейс не знайдено.');
+    if ((lh as { author_id: string }).author_id === userId) {
+      throw new BadRequestException('Не можна брати власний кейс у роботу.');
+    }
+
     const active = await this.countActive(userId);
     if (active >= this.limit) {
       throw new BadRequestException(
-        `Active-work limit reached (${this.limit}). Resolve one before taking another.`,
+        `Ліміт активних кейсів (${this.limit}). Заверши один, перш ніж брати новий.`,
       );
     }
 
@@ -69,19 +81,27 @@ export class WorkItemsService {
   }
 
   /** Submit a result. Frees the slot; only success/partial/fail feed the score. */
-  async resolve(workItemId: string, outcome: ResolveOutcome) {
+  async resolve(userId: string, workItemId: string, outcome: ResolveOutcome) {
     const { data, error } = await this.supabase.db
       .from('work_items')
       .update({ status: outcome, resolved_at: new Date().toISOString() })
       .eq('id', workItemId)
+      .eq('user_id', userId) // only your own work item
       .eq('status', WorkItemStatus.in_work) // only an active item can be resolved
-      .select()
+      .select('id, lifehack_id')
       .single();
 
     if (error) throw error;
-    if (!data) throw new BadRequestException('Work item is not active or does not exist.');
+    if (!data) throw new BadRequestException('Кейс не в роботі або не існує.');
 
-    // not_tried + expired carry no quality signal — recompute only on real outcomes.
+    // A real outcome changes the lifehack's score → drop its category feed cache.
+    const { data: lh } = await this.supabase.db
+      .from('lifehacks')
+      .select('category_id')
+      .eq('id', (data as { lifehack_id: string }).lifehack_id)
+      .maybeSingle();
+    if (lh) await this.redis.invalidateFeed((lh as { category_id: string }).category_id);
+
     return data;
   }
 
@@ -94,7 +114,17 @@ export class WorkItemsService {
       .eq('status', WorkItemStatus.in_work)
       .order('started_at', { ascending: true });
     if (error) throw error;
-    return data ?? [];
+    const items = data ?? [];
+    if (!items.length) return [];
+
+    // Enrich with lifehack title for the WebApp confirm sheet.
+    const ids = items.map((w) => w.lifehack_id as string);
+    const { data: lhs } = await this.supabase.db
+      .from('lifehacks')
+      .select('id, title')
+      .in('id', ids);
+    const titleById = new Map((lhs ?? []).map((l) => [l.id as string, l.title as string]));
+    return items.map((w) => ({ ...w, title: titleById.get(w.lifehack_id as string) ?? 'Кейс' }));
   }
 
   private async countActive(userId: string): Promise<number> {

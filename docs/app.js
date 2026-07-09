@@ -172,17 +172,39 @@ function openDetail(i){
   show('detail');
 }
 
-let inWork=0;
-function takeIt(){
-  const t=document.getElementById('d-take');
-  t.className='take taken'; t.textContent='✓ В роботі — спитаємо результат за 7 днів';
-  inWork++; updateInwork();
-  toast('Додано в роботу 📌');
+// Work items in progress. Demo mode seeds one so the flow is clickable offline.
+let activeItems = [];
+let demoActive = [{ id:'d1', title:'Гарантія через питання' }];
+function activeList(){ return LIVE ? activeItems : demoActive; }
+
+function loadActive(){
+  return api('/work-items/active')
+    .then(list => { activeItems = list || []; updateInwork(); })
+    .catch(()=>{ activeItems = []; updateInwork(); });
 }
+
+function takeIt(){
+  if(!LIVE){
+    const t=document.getElementById('d-take');
+    t.className='take taken'; t.textContent='✓ В роботі — спитаємо результат за 7 днів';
+    demoActive.push({ id:'d'+Date.now(), title:curItem.title }); updateInwork();
+    toast('Додано в роботу 📌'); return;
+  }
+  api('/lifehacks/'+encodeURIComponent(curItem.id)+'/take', { method:'POST' })
+    .then(w => {
+      const t=document.getElementById('d-take');
+      t.className='take taken'; t.textContent='✓ В роботі — спитаємо результат за 7 днів';
+      activeItems.push({ id:w.id, title:curItem.title }); updateInwork();
+      toast('Додано в роботу 📌');
+    })
+    .catch(e => toast('⚠️ '+e.message.slice(0,70)));
+}
+
 function updateInwork(){
+  const count = activeList().length;
   const el=document.getElementById('inwork-count');
   const banner=document.querySelector('.inwork');
-  if(inWork>0){ el.textContent=inWork+' кейс(и) в роботі'; banner.style.display='flex'; }
+  if(count>0){ el.textContent=count+' кейс(и) в роботі'; banner.style.display='flex'; }
   else banner.style.display='none';
 }
 
@@ -202,11 +224,40 @@ function show(s){
   document.getElementById('screen-'+s).scrollTop=0;
 }
 
-function openConfirm(){ document.getElementById('sheet').classList.add('show'); }
-function resolveDemo(msg){
-  document.getElementById('sheet').classList.remove('show');
-  inWork=Math.max(0,inWork-1); updateInwork();
-  toast(msg);
+function openConfirm(){ renderSheet(); document.getElementById('sheet').classList.add('show'); }
+function closeConfirm(){ document.getElementById('sheet').classList.remove('show'); }
+
+function renderSheet(){
+  const items = activeList();
+  const body = document.getElementById('sheet-body');
+  if(!items.length){ body.innerHTML='<h4>Немає кейсів у роботі</h4>'; return; }
+  const w = items[0];
+  body.innerHTML =
+    `<h4>Кейс «${w.title}»</h4>`+
+    `<div class="q">Ти брав його в роботу. Спрацювало?</div>`+
+    `<div class="opt">`+
+      `<button class="g" onclick="resolveWork('${w.id}','success')">🔥 Так, продав</button>`+
+      `<button onclick="resolveWork('${w.id}','partial')">😐 Частково</button>`+
+      `<button onclick="resolveWork('${w.id}','fail')">❌ Ні</button>`+
+      `<button onclick="resolveWork('${w.id}','not_tried')">⏭ Не пробував</button>`+
+    `</div>`;
+}
+
+function resolveWork(id, outcome){
+  const label = { success:'🔥 Зараховано як успіх', partial:'Дякуємо за відповідь',
+    fail:'Дякуємо за відповідь', not_tried:'Не враховується в рейтинг' }[outcome];
+  const done = ()=>{
+    if(LIVE) activeItems = activeItems.filter(x=>x.id!==id);
+    else demoActive = demoActive.filter(x=>x.id!==id);
+    updateInwork();
+    if(activeList().length) renderSheet(); else closeConfirm();
+    toast(label);
+  };
+  if(!LIVE){ done(); return; }
+  api('/work-items/'+encodeURIComponent(id)+'/result', {
+    method:'POST', headers:{ 'content-type':'application/json' },
+    body: JSON.stringify({ outcome })
+  }).then(done).catch(e => toast('⚠️ '+e.message.slice(0,60)));
 }
 
 // ===== Create flow (minimal taps) =====
@@ -289,13 +340,13 @@ if(LIVE){
   // In live mode the prototype scaffolding is off.
   const ribbon=document.querySelector('.ribbon'); if(ribbon) ribbon.style.display='none';
   const hint=document.getElementById('hint'); if(hint) hint.style.display='none';
-  updateInwork(); // hides the banner while work-items aren't wired yet
   loadMe()
     .then(loadCats)
+    .then(loadActive)
     .then(()=>loadFeed('it'))
     .catch(e=>{ curList=[]; renderFeed(); toast('⚠️ '+e.message.slice(0,70)); });
 } else {
-  curList = DATA.it; renderFeed();
+  curList = DATA.it; renderFeed(); updateInwork();
 }
 
 // ===== Theme =====

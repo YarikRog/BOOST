@@ -1,15 +1,15 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { WorkItemsService, ResolveOutcome } from '../services/work-items.service';
 import { WorkItemStatus } from '../common/enums';
+import { TelegramInitDataGuard, AuthedRequest } from '../auth/telegram-initdata.guard';
 
 interface ResolveBody {
   outcome: 'success' | 'partial' | 'fail' | 'not_tried';
 }
 
 /**
- * Thin controller — validation + delegation only, no business logic
- * (TECH_ARCHITECTURE §9). Auth/user resolution is stubbed via query/param for
- * the skeleton; real impl derives userId from Telegram initData.
+ * Thin controller — validation + delegation only. The user is resolved from the
+ * Telegram initData header (guard), never trusted from the client.
  */
 @Controller()
 export class WorkItemsController {
@@ -17,20 +17,23 @@ export class WorkItemsController {
 
   // POST /lifehacks/:id/take
   @Post('lifehacks/:id/take')
-  take(@Param('id') lifehackId: string, @Query('userId') userId: string) {
-    return this.workItems.take(userId, lifehackId);
+  @UseGuards(TelegramInitDataGuard)
+  take(@Param('id') lifehackId: string, @Req() req: AuthedRequest) {
+    return this.workItems.take(req.appUser.id, lifehackId);
   }
 
   // POST /work-items/:id/result
   @Post('work-items/:id/result')
-  resolve(@Param('id') workItemId: string, @Body() body: ResolveBody) {
+  @UseGuards(TelegramInitDataGuard)
+  resolve(@Param('id') workItemId: string, @Body() body: ResolveBody, @Req() req: AuthedRequest) {
     const outcome = WorkItemStatus[body.outcome] as ResolveOutcome;
-    return this.workItems.resolve(workItemId, outcome);
+    return this.workItems.resolve(req.appUser.id, workItemId, outcome);
   }
 
   // GET /work-items/active
   @Get('work-items/active')
-  active(@Query('userId') userId: string) {
-    return this.workItems.listActive(userId);
+  @UseGuards(TelegramInitDataGuard)
+  active(@Req() req: AuthedRequest) {
+    return this.workItems.listActive(req.appUser.id);
   }
 }

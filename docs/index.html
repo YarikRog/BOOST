@@ -133,18 +133,9 @@
     </div>
   </div>
 
-  <!-- confirm sheet -->
-  <div class="sheet-bg" id="sheet">
-    <div class="sheet">
-      <h4>Кейс «Гарантія через питання»</h4>
-      <div class="q">Ти брав його в роботу 7 днів тому. Спрацювало?</div>
-      <div class="opt">
-        <button class="g" onclick="resolveDemo('🔥 Зараховано як успіх')">🔥 Так, продав</button>
-        <button onclick="resolveDemo('Дякуємо за відповідь')">😐 Частково</button>
-        <button onclick="resolveDemo('Дякуємо за відповідь')">❌ Ні</button>
-        <button onclick="resolveDemo('Не враховується в рейтинг')">⏭ Не пробував</button>
-      </div>
-    </div>
+  <!-- confirm sheet (rendered dynamically) -->
+  <div class="sheet-bg" id="sheet" onclick="if(event.target===this)closeConfirm()">
+    <div class="sheet" id="sheet-body"></div>
   </div>
 
   <div class="demo-hint" id="hint">
