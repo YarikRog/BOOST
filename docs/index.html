@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <meta name="theme-color" content="#0f172a" />
 <title>Comfy Knowledge — прототип</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -77,7 +78,7 @@
       <p style="font-size:13px;color:var(--muted);margin:4px 0 0">Розкажи голосом за 20 секунд — це найшвидше</p>
 
       <div class="voice">
-        <div class="mic" onclick="toast('🎙️ Запис… (демо)')">🎙️</div>
+        <div class="mic" onclick="recordVoice()">🎙️</div>
         <b>Записати голосом</b>
         <span>«Клієнт сумнівався, я зробив так…»</span>
       </div>

@@ -114,6 +114,18 @@ function resolveDemo(msg){
 }
 function publish(){ toast('Кейс опубліковано ✅'); setTimeout(()=>show('feed'),700); }
 
+// Voice cases are recorded in the bot chat (native mic = zero friction).
+// Closing the Mini App drops the user back into the bot to record a voice note.
+function recordVoice(){
+  const tg = window.Telegram && window.Telegram.WebApp;
+  if(tg && tg.close){
+    toast('🎙️ Запиши голосове боту');
+    setTimeout(()=>tg.close(), 700);
+  } else {
+    toast('🎙️ Відкрий у Telegram, щоб записати голосове');
+  }
+}
+
 let tT;
 function toast(m){
   const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show');

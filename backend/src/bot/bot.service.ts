@@ -95,6 +95,7 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       return tgId ? this.promptStoreName(ctx, tgId) : Promise.resolve();
     });
     bot.on(':contact', (ctx) => this.onContact(ctx));
+    bot.on('message:voice', (ctx) => this.onVoice(ctx));
     bot.callbackQuery(/^exp:(.+)$/, (ctx) => this.onExperience(ctx));
     bot.callbackQuery(/^ns:(confirm|edit)$/, (ctx) => this.onNewStoreConfirm(ctx));
     bot.on('message:text', (ctx) => this.onText(ctx));
@@ -348,6 +349,36 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     } catch (e) {
       await ctx.reply(`❌ ${(e as Error).message}`);
     }
+  }
+
+  /**
+   * Voice cases: the WebApp "record" button sends users here to record a normal
+   * Telegram voice message (native mic = zero friction). We stash the file_id as
+   * a pending draft; transcription (Whisper) + category pick is the next step.
+   */
+  private async onVoice(ctx: Context): Promise<void> {
+    const tgId = ctx.from?.id;
+    if (!tgId) return;
+
+    const user = await this.users.findByTelegramId(tgId);
+    if (!user || !user.phone) {
+      await ctx.reply('🔒 Спочатку заверши вхід через посилання від директора.');
+      return;
+    }
+
+    const fileId = ctx.message?.voice?.file_id;
+    if (!fileId) return;
+
+    // Keep the newest few pending voice drafts per user (7-day TTL).
+    const key = `voiceDraft:${tgId}`;
+    await this.redis.client.lpush(key, fileId);
+    await this.redis.client.ltrim(key, 0, 9);
+    await this.redis.client.expire(key, 7 * 86400);
+
+    await ctx.reply(
+      '🎙️ Голосове отримано! Ми його розшифруємо і додамо у твої чернетки кейсів. ' +
+        'Скоро зможеш підтвердити й опублікувати.',
+    );
   }
 
   private async askPhone(ctx: Context): Promise<void> {

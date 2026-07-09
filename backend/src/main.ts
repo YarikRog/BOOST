@@ -6,6 +6,13 @@ import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
+  // WebApp (GitHub Pages) is a different origin than this API (Railway).
+  // initData in a header is the auth, so a permissive CORS origin is fine.
+  app.enableCors({
+    origin: true,
+    allowedHeaders: ['content-type', 'x-telegram-init-data'],
+    methods: ['GET', 'POST'],
+  });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
   const config = app.get(ConfigService);
