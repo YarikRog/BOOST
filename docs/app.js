@@ -1,4 +1,12 @@
-// ---- mock data: the hero is RESULT social-proof, not likes ----
+// ===== Config =====
+const API = 'https://boost-production-9b07.up.railway.app';
+const tg = window.Telegram && window.Telegram.WebApp;
+const initData = tg ? tg.initData : '';
+const LIVE = !!initData; // inside Telegram with initData → talk to the backend
+const SLUG_FOR = { it: 'it_service', happy: 'happy_service' };
+let catBySlug = {}; // slug → {id, name}
+
+// ---- mock data (demo mode, outside Telegram): RESULT social-proof, not likes ----
 const DATA = {
   it: [
     {cat:'IT Service',tier:'TOP',title:'Гарантія через питання, а не через тиск',
@@ -30,12 +38,55 @@ const DATA = {
   ]
 };
 
-let curCat='it', curItem=null;
+let curCat='it', curItem=null, curList=DATA.it;
 
+// ===== API helpers =====
+function api(path, opts){
+  opts = opts || {};
+  opts.headers = Object.assign({ 'x-telegram-init-data': initData }, opts.headers || {});
+  return fetch(API + path, opts).then(r => {
+    if(!r.ok) return r.text().then(t => { throw new Error(t || ('HTTP '+r.status)); });
+    return r.status === 204 ? null : r.json();
+  });
+}
+
+function tierOf(tried){ return tried>=10 ? 'TOP' : (tried>0 ? 'GROWING' : 'NEW'); }
+
+// Normalize a backend feed row into the card shape the UI already renders.
+function normLive(x, catName){
+  return {
+    id:x.id, cat:catName, tier:tierOf(x.tried||0), title:x.title,
+    sub:x.product_type||'', rate:x.rate||0, tried:x.tried||0, ok:x.ok||0,
+    author:x.author||'Продавець', sit:x.sit||'', do:x.do||'', why:x.why||''
+  };
+}
+
+function loadCats(){
+  return api('/categories').then(list => {
+    catBySlug = {};
+    (list||[]).forEach(c => { catBySlug[c.slug] = { id:c.id, name:c.name }; });
+  });
+}
+
+function loadFeed(tabKey){
+  const slug = SLUG_FOR[tabKey];
+  const cat = catBySlug[slug];
+  if(!cat){ curList=[]; renderFeed(); return; }
+  api('/lifehacks/feed?categoryId=' + encodeURIComponent(cat.id))
+    .then(rows => { curList = (rows||[]).map(r => normLive(r, cat.name)); renderFeed(); })
+    .catch(e => { curList=[]; renderFeed(); toast('⚠️ '+e.message.slice(0,60)); });
+}
+
+// ===== Rendering =====
 function renderFeed(){
-  const list = DATA[curCat];
+  const list = curList || [];
+  if(!list.length){
+    document.getElementById('feed-list').innerHTML =
+      '<div class="card" style="cursor:default"><div class="sub">Поки що немає кейсів у цій категорії. Додай перший через «+».</div></div>';
+    return;
+  }
   document.getElementById('feed-list').innerHTML = list.map((d,i)=>`
-    <div class="card" onclick="openDetail('${curCat}',${i})">
+    <div class="card" onclick="openDetail(${i})">
       <span class="cat">${d.cat}</span><span class="tier">${d.tier}</span>
       <h3>${d.title}</h3>
       <div class="sub">${d.sub}</div>
@@ -60,11 +111,12 @@ function renderFeed(){
 
 function switchCat(el,c){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
-  el.classList.add('on'); curCat=c; renderFeed();
+  el.classList.add('on'); curCat=c;
+  if(LIVE) loadFeed(c); else { curList=DATA[c]; renderFeed(); }
 }
 
-function openDetail(c,i){
-  curItem=DATA[c][i];
+function openDetail(i){
+  curItem=curList[i];
   const d=curItem;
   document.getElementById('d-cat').className='card cat';
   document.getElementById('d-cat').outerHTML=`<span class="cat" id="d-cat">${d.cat}</span>`;
@@ -112,12 +164,45 @@ function resolveDemo(msg){
   document.getElementById('inwork-count').textContent = inWork>0 ? inWork+' кейси в роботі' : 'Немає кейсів у роботі';
   toast(msg);
 }
-function publish(){ toast('Кейс опубліковано ✅'); setTimeout(()=>show('feed'),700); }
+
+// Select one chip within its group (category / product).
+function selectChip(el){
+  el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
+  el.classList.add('on');
+}
+
+function publish(){
+  if(!LIVE){ toast('Кейс опубліковано ✅'); setTimeout(()=>show('feed'),700); return; }
+  const catEl = document.querySelector('#cat-chips .chip.on');
+  const prodEl = document.querySelector('#prod-chips .chip.on');
+  const title = (document.getElementById('c-title').value||'').trim();
+  const body = (document.getElementById('c-body').value||'').trim();
+  if(!title){ toast('Додай заголовок'); return; }
+  const payload = {
+    categorySlug: catEl ? catEl.getAttribute('data-slug') : 'it_service',
+    productType: prodEl ? prodEl.textContent.trim() : '',
+    title,
+    content: { do: body }
+  };
+  api('/lifehacks', {
+    method:'POST',
+    headers:{ 'content-type':'application/json' },
+    body: JSON.stringify(payload)
+  }).then(()=>{
+    toast('Кейс опубліковано ✅');
+    document.getElementById('c-title').value='';
+    document.getElementById('c-body').value='';
+    // reload the feed tab matching the published category
+    const tabKey = (payload.categorySlug==='happy_service') ? 'happy' : 'it';
+    curCat = tabKey;
+    document.querySelectorAll('.tab').forEach((t,idx)=>t.classList.toggle('on', (idx===0)===(tabKey==='it')));
+    loadFeed(tabKey);
+    setTimeout(()=>show('feed'),700);
+  }).catch(e => toast('⚠️ '+e.message.slice(0,60)));
+}
 
 // Voice cases are recorded in the bot chat (native mic = zero friction).
-// Closing the Mini App drops the user back into the bot to record a voice note.
 function recordVoice(){
-  const tg = window.Telegram && window.Telegram.WebApp;
   if(tg && tg.close){
     toast('🎙️ Запиши голосове боту');
     setTimeout(()=>tg.close(), 700);
@@ -132,7 +217,13 @@ function toast(m){
   clearTimeout(tT); tT=setTimeout(()=>t.classList.remove('show'),1800);
 }
 
-renderFeed();
+// ===== Init =====
+if(LIVE){
+  try{ tg.ready(); tg.expand(); }catch(e){}
+  loadCats().then(()=>loadFeed('it')).catch(e=>{ curList=[]; renderFeed(); toast('⚠️ '+e.message.slice(0,60)); });
+} else {
+  curList = DATA.it; renderFeed();
+}
 
 // Theme management
 function applyTheme(theme){

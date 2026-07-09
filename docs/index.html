@@ -86,23 +86,25 @@
       <div class="or">— або коротко текстом —</div>
 
       <div class="fieldlab">Категорія</div>
-      <div class="chips">
-        <div class="chip on">IT Service</div>
-        <div class="chip">Happy Service</div>
+      <div class="chips" id="cat-chips">
+        <div class="chip on" onclick="selectChip(this)" data-slug="it_service">IT Service</div>
+        <div class="chip" onclick="selectChip(this)" data-slug="happy_service">Happy Service</div>
       </div>
 
       <div class="fieldlab">Товар</div>
-      <div class="chips">
-        <div class="chip on">Ноутбуки</div>
-        <div class="chip">ТВ</div>
-        <div class="chip">Смартфони</div>
-        <div class="chip">Техніка для дому</div>
+      <div class="chips" id="prod-chips">
+        <div class="chip on" onclick="selectChip(this)">Ноутбуки</div>
+        <div class="chip" onclick="selectChip(this)">ТВ</div>
+        <div class="chip" onclick="selectChip(this)">Смартфони</div>
+        <div class="chip" onclick="selectChip(this)">Техніка для дому</div>
       </div>
 
-      <div class="fieldlab">Опиши кейс</div>
-      <textarea placeholder="Що сказав клієнт, що відповів ти, чим завершилось…"></textarea>
+      <div class="fieldlab">Заголовок</div>
+      <input id="c-title" type="text" placeholder="Коротко: суть прийому"
+        style="width:100%;border:1px solid var(--line);border-radius:13px;padding:12px;font-size:14px;font-family:inherit" />
 
-      <div class="more" onclick="toast('Розгорнута форма (5 питань) — демо')">+ Детальніше (структурований кейс)</div>
+      <div class="fieldlab">Опиши кейс</div>
+      <textarea id="c-body" placeholder="Що сказав клієнт, що відповів ти, чим завершилось…"></textarea>
 
       <button class="take" style="margin-top:18px" onclick="publish()">Опублікувати</button>
     </div>
