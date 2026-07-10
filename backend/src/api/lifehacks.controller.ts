@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Response } from 'express';
 import { LifehacksService } from '../services/lifehacks.service';
 import { TelegramInitDataGuard, AuthedRequest } from '../auth/telegram-initdata.guard';
 
@@ -54,6 +55,20 @@ export class LifehacksController {
     @Query('audience') audience: 'newcomer' | 'experienced' = 'experienced',
   ) {
     return this.lifehacks.feed(categoryId, audience);
+  }
+
+  // GET /lifehacks/:id/voice — stream a voice case's audio (public; used by
+  // the WebApp <audio> element which can't send the initData header).
+  @Get(':id/voice')
+  async voice(@Param('id') id: string, @Res() res: Response): Promise<void> {
+    const v = await this.lifehacks.voiceBuffer(id);
+    if (!v) {
+      res.status(404).send('no voice');
+      return;
+    }
+    res.set('Content-Type', v.contentType);
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(v.buffer);
   }
 
   // GET /lifehacks/:id/quality — debug/inspection of the scoring output

@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../integrations/supabase.client';
 import { RedisService } from '../integrations/redis.client';
 import { ScoringService } from './scoring.service';
@@ -24,10 +25,51 @@ export class LifehacksService {
     private readonly supabase: SupabaseService,
     private readonly redis: RedisService,
     private readonly scoring: ScoringService,
+    private readonly config: ConfigService,
   ) {}
 
   static audienceOf(segment: Experience | null): Audience {
     return segment === Experience.lt_6m ? 'newcomer' : 'experienced';
+  }
+
+  /** Direct Telegram sendMessage (avoids a circular dep on BotService). */
+  private async tgSend(chatId: number, text: string): Promise<void> {
+    const token = this.config.get<string>('TELEGRAM_BOT_TOKEN');
+    if (!token) return;
+    try {
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text }),
+      });
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  /**
+   * Fetch a voice case's audio bytes from Telegram (file_id → getFile →
+   * download). Used by GET /lifehacks/:id/voice so the WebApp can play it.
+   */
+  async voiceBuffer(lifehackId: string): Promise<{ buffer: Buffer; contentType: string } | null> {
+    const token = this.config.get<string>('TELEGRAM_BOT_TOKEN');
+    if (!token) return null;
+    const { data } = await this.supabase.db
+      .from('lifehacks')
+      .select('content_json')
+      .eq('id', lifehackId)
+      .maybeSingle();
+    const fileId = (data?.content_json as { voice_file_id?: string } | undefined)?.voice_file_id;
+    if (!fileId) return null;
+
+    const gf = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`);
+    const gfJson = (await gf.json()) as { ok: boolean; result?: { file_path?: string } };
+    const filePath = gfJson.result?.file_path;
+    if (!filePath) return null;
+
+    const dl = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
+    const buffer = Buffer.from(await dl.arrayBuffer());
+    return { buffer, contentType: 'audio/ogg' };
   }
 
   /**
@@ -40,6 +82,12 @@ export class LifehacksService {
     intent: { categorySlug: string; productType: string },
   ): Promise<{ ok: true }> {
     await this.redis.client.set(`voiceIntent:${telegramId}`, JSON.stringify(intent), 'EX', 900);
+    // Tell the user what to do now that the app closed and they're back in chat.
+    await this.tgSend(
+      telegramId,
+      '🎙️ Натисни значок мікрофона внизу і надиктуй кейс (до 60 сек). ' +
+        'Запиши й надішли голосове — я попрошу лише короткий заголовок.',
+    );
     return { ok: true };
   }
 

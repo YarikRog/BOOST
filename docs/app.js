@@ -172,9 +172,17 @@ function openDetail(i){
   document.getElementById('d-proof').style.background = d.tried>0 ? 'var(--good-soft)' : '#f1f5f9';
   document.getElementById('d-sit').textContent=d.sit;
   document.getElementById('d-do').textContent = d.has_voice
-    ? '🎧 Голосовий кейс. Візьми в роботу — бот пришле тобі голосове автора.'
+    ? '🎧 Голосовий кейс — послухай запис вище.'
     : d.do;
   document.getElementById('d-why').textContent=d.why;
+  // Voice player
+  const audio=document.getElementById('d-audio');
+  if(LIVE && d.has_voice && d.id){
+    audio.src = API + '/lifehacks/' + encodeURIComponent(d.id) + '/voice';
+    audio.classList.remove('hidden');
+  } else {
+    audio.classList.add('hidden'); audio.removeAttribute('src');
+  }
   document.getElementById('d-author').textContent='Автор: '+d.author;
   // You cannot take or react to your own case.
   document.getElementById('d-react-card').classList.toggle('hidden', mine);
