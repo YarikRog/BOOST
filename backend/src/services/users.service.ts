@@ -136,8 +136,10 @@ export class UsersService {
   }
 
   /**
-   * DIRECTOR creates their store on first login (lazy creation, PRODUCT_LOGIC §1).
-   * Links store ↔ director and sets the director's store_id.
+   * DIRECTOR creates OR claims their store on first login. If a store with that
+   * name already exists (e.g. a pilot store), the director is attached to it and
+   * it is adopted into the director's region — no duplicate. Otherwise a new
+   * store is created. (PRODUCT_LOGIC §1, lazy creation.)
    */
   async createStoreForDirector(userId: string, storeName: string): Promise<{ id: string }> {
     const user = await this.requireUser(userId);
@@ -151,20 +153,46 @@ export class UsersService {
       throw new BadRequestException('Director already has a store.');
     }
 
-    const { data: store, error: storeErr } = await this.supabase.db
+    // Claim an existing store of the same name (case-insensitive) if free.
+    const { data: existing } = await this.supabase.db
       .from('stores')
-      .insert({ name: storeName, region_id: user.region_id, director_id: userId })
-      .select('id')
-      .single();
-    if (storeErr) throw storeErr;
+      .select('id, director_id')
+      .ilike('name', storeName)
+      .maybeSingle();
+
+    let storeId: string;
+    if (existing) {
+      const ex = existing as { id: string; director_id: string | null };
+      if (ex.director_id && ex.director_id !== userId) {
+        throw new BadRequestException('Цей магазин уже має директора.');
+      }
+      await this.supabase.db
+        .from('stores')
+        .update({ region_id: user.region_id, director_id: userId })
+        .eq('id', ex.id);
+      storeId = ex.id;
+      // Keep the store's team in the same region.
+      await this.supabase.db
+        .from('users')
+        .update({ region_id: user.region_id })
+        .eq('store_id', ex.id);
+    } else {
+      const { data: store, error: storeErr } = await this.supabase.db
+        .from('stores')
+        .insert({ name: storeName, region_id: user.region_id, director_id: userId })
+        .select('id')
+        .single();
+      if (storeErr) throw storeErr;
+      storeId = (store as { id: string }).id;
+    }
 
     const { error: linkErr } = await this.supabase.db
       .from('users')
-      .update({ store_id: (store as { id: string }).id })
+      .update({ store_id: storeId })
       .eq('id', userId);
     if (linkErr) throw linkErr;
 
-    return store as { id: string };
+    return { id: storeId };
   }
 
   /**
