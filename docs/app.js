@@ -418,5 +418,13 @@ const saved=localStorage.getItem('theme');
 const pref=window.matchMedia('(prefers-color-scheme:dark)').matches;
 applyTheme(saved||(pref?'dark':'light'));
 
+// When a field is focused, scroll it into view above the on-screen keyboard.
+['c-title','c-body'].forEach(id=>{
+  const el=document.getElementById(id);
+  if(el) el.addEventListener('focus', ()=>{
+    setTimeout(()=>{ try{ el.scrollIntoView({block:'center', behavior:'smooth'}); }catch(e){} }, 300);
+  });
+});
+
 // Hide splash after animation
 setTimeout(()=>{ const s=document.getElementById('splash'); if(s) s.style.display='none'; },1200);
