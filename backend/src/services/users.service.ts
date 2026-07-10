@@ -124,8 +124,18 @@ export class UsersService {
     return { storeId: (store as { id: string }).id };
   }
 
-  /** MEGA_ADMIN creates a region (needed before inviting a REGIONAL_IT_LEAD). */
+  /**
+   * Find-or-create a region by name (case-insensitive) so entering the same
+   * region for a director and later a regional lead reuses it (no duplicate).
+   */
   async createRegion(name: string): Promise<{ id: string; name: string }> {
+    const { data: existing } = await this.supabase.db
+      .from('regions')
+      .select('id, name')
+      .ilike('name', name)
+      .maybeSingle();
+    if (existing) return existing as { id: string; name: string };
+
     const { data, error } = await this.supabase.db
       .from('regions')
       .insert({ name })

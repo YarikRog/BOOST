@@ -15,7 +15,8 @@ import { UsersService, UserRow } from './users.service';
  * rights within a store, so both can add DEP_DIRECTOR and SELLER.
  */
 const CAN_INVITE: Record<UserRole, UserRole[]> = {
-  [UserRole.MEGA_ADMIN]: [UserRole.REGIONAL_IT_LEAD],
+  // MEGA_ADMIN can also invite a DIRECTOR directly (pilot bypass of the chain).
+  [UserRole.MEGA_ADMIN]: [UserRole.REGIONAL_IT_LEAD, UserRole.DIRECTOR],
   [UserRole.REGIONAL_IT_LEAD]: [UserRole.DIRECTOR],
   [UserRole.DIRECTOR]: [UserRole.DEP_DIRECTOR, UserRole.SELLER],
   [UserRole.DEP_DIRECTOR]: [UserRole.DEP_DIRECTOR, UserRole.SELLER],

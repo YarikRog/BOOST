@@ -286,7 +286,12 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
   private keyboardFor(role: UserRole): Keyboard | undefined {
     switch (role) {
       case UserRole.MEGA_ADMIN:
-        return new Keyboard().text(ADMIN_NEW_STORE_BTN).row().text(BTN_INV_REGIONAL).resized();
+        return new Keyboard()
+          .text(ADMIN_NEW_STORE_BTN)
+          .row()
+          .text(BTN_INV_REGIONAL)
+          .text(BTN_INV_DIRECTOR)
+          .resized();
       case UserRole.REGIONAL_IT_LEAD:
         return new Keyboard().text(ADMIN_NEW_STORE_BTN).row().text(BTN_INV_DIRECTOR).resized();
       case UserRole.DIRECTOR:
@@ -341,9 +346,14 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     const creator = await this.users.findByTelegramId(tgId);
     if (!creator) return;
 
-    // MEGA_ADMIN invites a REGIONAL — needs a region first (ask its name).
-    if (targetRole === UserRole.REGIONAL_IT_LEAD) {
-      await this.redis.client.set(`awaitRegionName:${tgId}`, '1', 'EX', 300);
+    // Needs a region first (ask its name): inviting a REGIONAL, or MEGA_ADMIN
+    // inviting a DIRECTOR directly (pilot bypass). The role is stored so onText
+    // knows what to create after the region.
+    const needsRegion =
+      targetRole === UserRole.REGIONAL_IT_LEAD ||
+      (targetRole === UserRole.DIRECTOR && creator.role === UserRole.MEGA_ADMIN);
+    if (needsRegion) {
+      await this.redis.client.set(`awaitRegionName:${tgId}`, targetRole, 'EX', 300);
       await ctx.reply('Введи назву регіону (напр. «Житомирська область»):', {
         reply_markup: new InlineKeyboard().text('❌ Скасувати', 'cancelflow'),
       });
@@ -715,21 +725,22 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     // Voice case flow: waiting for the title of a just-recorded voice case.
     if (await this.handleVoiceTitle(ctx, tgId)) return;
 
-    // Invite flow: MEGA_ADMIN entered a region name → create region + invite.
+    // Invite flow: admin entered a region name → find/create region + invite the
+    // stored target role (REGIONAL, or DIRECTOR when admin bypasses the chain).
     const regionKey = `awaitRegionName:${tgId}`;
-    if (await this.redis.client.get(regionKey)) {
+    const pendingRole = await this.redis.client.get(regionKey);
+    if (pendingRole) {
       const regionName = ctx.message?.text?.trim();
       if (!regionName) return;
       await this.redis.client.del(regionKey);
       try {
         const creator = await this.users.findByTelegramId(tgId);
         if (!creator) return;
+        const targetRole = pendingRole as UserRole;
         const region = await this.users.createRegion(regionName);
-        const invite = await this.invites.create(creator, UserRole.REGIONAL_IT_LEAD, {
-          regionId: region.id,
-        });
-        await ctx.reply(`✅ Регіон «${regionName}» створено.`);
-        await this.sendInviteLink(ctx, UserRole.REGIONAL_IT_LEAD, invite.deepLink);
+        const invite = await this.invites.create(creator, targetRole, { regionId: region.id });
+        await ctx.reply(`✅ Регіон «${region.name}».`);
+        await this.sendInviteLink(ctx, targetRole, invite.deepLink);
       } catch (e) {
         await ctx.reply(`❌ ${(e as Error).message}`);
       }
