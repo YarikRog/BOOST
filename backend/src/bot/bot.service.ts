@@ -17,7 +17,8 @@ interface VoiceFlow {
   fileId: string;
   slug?: string;
   product?: string;
-  step: 'title';
+  title?: string;
+  step: 'title' | 'confirm';
 }
 
 type OnboardStep = 'phone' | 'experience' | 'store' | 'done';
@@ -119,6 +120,7 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     bot.on('message:voice', (ctx) => this.onVoice(ctx));
     bot.callbackQuery(/^exp:(.+)$/, (ctx) => this.onExperience(ctx));
     bot.callbackQuery(/^ns:(confirm|edit)$/, (ctx) => this.onNewStoreConfirm(ctx));
+    bot.callbackQuery(/^vpub:(confirm|edit|cancel)$/, (ctx) => this.onVoicePublish(ctx));
     bot.on('message:text', (ctx) => this.onText(ctx));
     bot.catch((err) => this.logger.error(`Bot error: ${err.message}`));
   }
@@ -414,7 +416,7 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     await ctx.reply('🎙️ Голосове отримано! Введи короткий заголовок кейсу:');
   }
 
-  /** Called from onText when a voice flow is awaiting its title. */
+  /** Called from onText when a voice flow is awaiting its title. Asks to confirm. */
   private async handleVoiceTitle(ctx: Context, tgId: number): Promise<boolean> {
     const raw = await this.redis.client.get(this.voiceKey(tgId));
     if (!raw) return false;
@@ -423,16 +425,55 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
 
     const title = ctx.message?.text?.trim();
     if (!title) return true; // consume, keep waiting
+
+    flow.title = title;
+    flow.step = 'confirm';
+    await this.redis.client.set(this.voiceKey(tgId), JSON.stringify(flow), 'EX', 1800);
+    const kb = new InlineKeyboard()
+      .text('✅ Опублікувати', 'vpub:confirm')
+      .row()
+      .text('✏️ Змінити заголовок', 'vpub:edit')
+      .row()
+      .text('❌ Скасувати', 'vpub:cancel');
+    await ctx.reply(`Опублікувати голосовий кейс «${title}»?`, { reply_markup: kb });
+    return true;
+  }
+
+  /** Handles the confirm/edit/cancel buttons for a voice case. */
+  private async onVoicePublish(ctx: Context): Promise<void> {
+    const tgId = ctx.from?.id;
+    if (!tgId) return;
+    await ctx.answerCallbackQuery();
+
+    const raw = await this.redis.client.get(this.voiceKey(tgId));
+    if (!raw) return;
+    const flow = JSON.parse(raw) as VoiceFlow;
+    const action = (ctx.match as RegExpMatchArray)[1];
+
+    if (action === 'cancel') {
+      await this.redis.client.del(this.voiceKey(tgId));
+      await ctx.reply('❌ Скасовано. Голосовий кейс не опубліковано.');
+      return;
+    }
+    if (action === 'edit') {
+      flow.step = 'title';
+      await this.redis.client.set(this.voiceKey(tgId), JSON.stringify(flow), 'EX', 1800);
+      await ctx.reply('Введи новий заголовок:');
+      return;
+    }
+
+    // confirm
+    if (flow.step !== 'confirm' || !flow.slug || !flow.title) return;
     const user = await this.users.findByTelegramId(tgId);
     if (!user) {
       await this.redis.client.del(this.voiceKey(tgId));
-      return true;
+      return;
     }
     try {
       await this.lifehacks.create(user, {
         categorySlug: flow.slug,
         productType: flow.product ?? '',
-        title,
+        title: flow.title,
         content: { voice_file_id: flow.fileId },
       });
       await this.redis.client.del(this.voiceKey(tgId));
@@ -440,7 +481,6 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     } catch (e) {
       await ctx.reply(`❌ ${(e as Error).message}`);
     }
-    return true;
   }
 
   private async askPhone(ctx: Context): Promise<void> {

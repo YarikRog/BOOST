@@ -128,8 +128,8 @@ function renderFeed(){
         <div class="bar"><i style="width:${d.rate}%"></i></div>
         <div class="txt">спрацювало<br>${d.ok} з ${d.tried} підтвердили</div>
       </div>` : `
-      <div class="proof" style="background:#f1f5f9">
-        <div class="txt" style="color:#64748b">Новий кейс — ще немає підтверджень. Будь першим, хто спробує.</div>
+      <div class="proof" style="background:var(--chip)">
+        <div class="txt" style="color:var(--muted)">Новий кейс — ще немає підтверджень. Будь першим, хто спробує.</div>
       </div>`;
     const foot = mine ? `
       <div class="foot"><span class="who">Твій кейс</span>
@@ -167,8 +167,8 @@ function openDetail(i){
   document.getElementById('d-title').textContent=d.title;
   document.getElementById('d-proof').innerHTML = d.tried>0
     ? `<div class="big">${d.rate}%</div><div class="bar"><i style="width:${d.rate}%"></i></div><div class="txt">спрацювало · ${d.ok} з ${d.tried} підтвердили</div>`
-    : `<div class="txt" style="color:#64748b">Новий кейс — ще немає підтверджень</div>`;
-  document.getElementById('d-proof').style.background = d.tried>0 ? 'var(--good-soft)' : '#f1f5f9';
+    : `<div class="txt" style="color:var(--muted)">Новий кейс — ще немає підтверджень</div>`;
+  document.getElementById('d-proof').style.background = d.tried>0 ? 'var(--good-soft)' : 'var(--chip)';
   document.getElementById('d-sit').textContent=d.sit;
   document.getElementById('d-do').textContent = d.has_voice
     ? '🎧 Голосовий кейс — послухай запис вище.'
@@ -372,6 +372,9 @@ renderProducts('it_service');
 if(LIVE){
   document.body.classList.add('tg'); // fill the whole Telegram webview
   try{ tg.ready(); tg.expand(); }catch(e){}
+  // Stop the pull-down gesture from dragging the app / losing the bottom nav.
+  try{ tg.disableVerticalSwipes && tg.disableVerticalSwipes(); }catch(e){}
+  updateInwork(); // hide the in-work banner until real active items load
   // In live mode the prototype scaffolding is off.
   const ribbon=document.querySelector('.ribbon'); if(ribbon) ribbon.style.display='none';
   const hint=document.getElementById('hint'); if(hint) hint.style.display='none';
