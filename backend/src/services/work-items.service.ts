@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, Logger } from '@nes
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../integrations/supabase.client';
 import { RedisService } from '../integrations/redis.client';
+import { BotService } from '../bot/bot.service';
 import { WorkItemStatus } from '../common/enums';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -25,18 +26,22 @@ export class WorkItemsService {
     private readonly supabase: SupabaseService,
     private readonly redis: RedisService,
     private readonly config: ConfigService,
+    private readonly bot: BotService,
   ) {}
 
   private get limit(): number {
     return Number(this.config.get('ACTIVE_WORK_LIMIT', 5));
   }
 
-  /** Take a lifehack into work. Enforces the active-work limit + single-active guard. */
-  async take(userId: string, lifehackId: string) {
+  /**
+   * Take a lifehack into work. Enforces the active-work limit + single-active
+   * guard. If the lifehack is a voice case, forwards the audio to the taker.
+   */
+  async take(userId: string, lifehackId: string, takerTelegramId?: number) {
     // You cannot take your own lifehack into work (you can't confirm yourself).
     const { data: lh, error: lhErr } = await this.supabase.db
       .from('lifehacks')
-      .select('author_id')
+      .select('author_id, content_json')
       .eq('id', lifehackId)
       .maybeSingle();
     if (lhErr) throw lhErr;
@@ -73,10 +78,23 @@ export class WorkItemsService {
     // The partial-unique index (status='in_work') rejects a second active item.
     if (error) {
       if (error.code === '23505') {
-        throw new ConflictException('You already have this lifehack in work.');
+        throw new ConflictException('Ти вже маєш цей кейс у роботі.');
       }
       throw error;
     }
+
+    // Voice case: forward the original audio to the taker's bot chat.
+    const content = ((lh as { content_json?: Record<string, unknown> }).content_json ?? {}) as {
+      voice_file_id?: string;
+    };
+    if (content.voice_file_id && takerTelegramId) {
+      await this.bot.sendVoice(
+        takerTelegramId,
+        content.voice_file_id,
+        '🎧 Голосовий кейс, який ти взяв у роботу. Спробуй і за 7 днів скажи результат.',
+      );
+    }
+
     return data;
   }
 

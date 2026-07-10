@@ -9,7 +9,15 @@ import { Bot, InlineKeyboard, Keyboard, Context } from 'grammy';
 import { RedisService } from '../integrations/redis.client';
 import { InvitesService } from '../services/invites.service';
 import { UsersService } from '../services/users.service';
+import { LifehacksService } from '../services/lifehacks.service';
+import { CategoriesService } from '../services/categories.service';
 import { Experience, UserRole } from '../common/enums';
+
+interface VoiceFlow {
+  fileId: string;
+  slug?: string;
+  step: 'category' | 'title';
+}
 
 type OnboardStep = 'phone' | 'experience' | 'store' | 'done';
 interface OnboardState {
@@ -42,7 +50,19 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly redis: RedisService,
     private readonly invites: InvitesService,
     private readonly users: UsersService,
+    private readonly lifehacks: LifehacksService,
+    private readonly categories: CategoriesService,
   ) {}
+
+  /** Send a voice message to a user by telegram id (used to forward voice cases). */
+  async sendVoice(telegramId: number, fileId: string, caption?: string): Promise<void> {
+    if (!this.bot) return;
+    try {
+      await this.bot.api.sendVoice(telegramId, fileId, caption ? { caption } : undefined);
+    } catch (e) {
+      this.logger.error(`sendVoice to ${telegramId} failed: ${(e as Error).message}`);
+    }
+  }
 
   onApplicationBootstrap(): void {
     const token = this.config.get<string>('TELEGRAM_BOT_TOKEN');
@@ -98,6 +118,7 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     bot.on('message:voice', (ctx) => this.onVoice(ctx));
     bot.callbackQuery(/^exp:(.+)$/, (ctx) => this.onExperience(ctx));
     bot.callbackQuery(/^ns:(confirm|edit)$/, (ctx) => this.onNewStoreConfirm(ctx));
+    bot.callbackQuery(/^vcat:(.+)$/, (ctx) => this.onVoiceCategory(ctx));
     bot.on('message:text', (ctx) => this.onText(ctx));
     bot.catch((err) => this.logger.error(`Bot error: ${err.message}`));
   }
@@ -356,12 +377,17 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
    * Telegram voice message (native mic = zero friction). We stash the file_id as
    * a pending draft; transcription (Whisper) + category pick is the next step.
    */
+  // ── Voice case flow: voice → pick category → title → publish ──────
+  private voiceKey(tgId: number): string {
+    return `voiceFlow:${tgId}`;
+  }
+
   private async onVoice(ctx: Context): Promise<void> {
     const tgId = ctx.from?.id;
     if (!tgId) return;
 
     const user = await this.users.findByTelegramId(tgId);
-    if (!user || !user.phone) {
+    if (!user || !user.phone || !user.store_id) {
       await ctx.reply('🔒 Спочатку заверши вхід через посилання від директора.');
       return;
     }
@@ -369,16 +395,58 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     const fileId = ctx.message?.voice?.file_id;
     if (!fileId) return;
 
-    // Keep the newest few pending voice drafts per user (7-day TTL).
-    const key = `voiceDraft:${tgId}`;
-    await this.redis.client.lpush(key, fileId);
-    await this.redis.client.ltrim(key, 0, 9);
-    await this.redis.client.expire(key, 7 * 86400);
+    const flow: VoiceFlow = { fileId, step: 'category' };
+    await this.redis.client.set(this.voiceKey(tgId), JSON.stringify(flow), 'EX', 1800);
 
-    await ctx.reply(
-      '🎙️ Голосове отримано! Ми його розшифруємо і додамо у твої чернетки кейсів. ' +
-        'Скоро зможеш підтвердити й опублікувати.',
-    );
+    const cats = await this.categories.list();
+    const kb = new InlineKeyboard();
+    cats.forEach((c) => kb.text(c.name, `vcat:${c.slug}`).row());
+    await ctx.reply('🎙️ Голосове отримано! До якої категорії кейс?', { reply_markup: kb });
+  }
+
+  private async onVoiceCategory(ctx: Context): Promise<void> {
+    const tgId = ctx.from?.id;
+    if (!tgId) return;
+    await ctx.answerCallbackQuery();
+
+    const raw = await this.redis.client.get(this.voiceKey(tgId));
+    if (!raw) return;
+    const flow = JSON.parse(raw) as VoiceFlow;
+    if (flow.step !== 'category') return;
+
+    flow.slug = (ctx.match as RegExpMatchArray)[1];
+    flow.step = 'title';
+    await this.redis.client.set(this.voiceKey(tgId), JSON.stringify(flow), 'EX', 1800);
+    await ctx.reply('Введи короткий заголовок кейсу (напр. «Гарантія через питання»):');
+  }
+
+  /** Called from onText when a voice flow is awaiting its title. */
+  private async handleVoiceTitle(ctx: Context, tgId: number): Promise<boolean> {
+    const raw = await this.redis.client.get(this.voiceKey(tgId));
+    if (!raw) return false;
+    const flow = JSON.parse(raw) as VoiceFlow;
+    if (flow.step !== 'title' || !flow.slug) return false;
+
+    const title = ctx.message?.text?.trim();
+    if (!title) return true; // consume, keep waiting
+    const user = await this.users.findByTelegramId(tgId);
+    if (!user) {
+      await this.redis.client.del(this.voiceKey(tgId));
+      return true;
+    }
+    try {
+      await this.lifehacks.create(user, {
+        categorySlug: flow.slug,
+        productType: '',
+        title,
+        content: { voice_file_id: flow.fileId },
+      });
+      await this.redis.client.del(this.voiceKey(tgId));
+      await ctx.reply('✅ Голосовий кейс опубліковано! Він зʼявився у стрічці.');
+    } catch (e) {
+      await ctx.reply(`❌ ${(e as Error).message}`);
+    }
+    return true;
   }
 
   private async askPhone(ctx: Context): Promise<void> {
@@ -437,6 +505,9 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
   private async onText(ctx: Context): Promise<void> {
     const tgId = ctx.from?.id;
     if (!tgId) return;
+
+    // Voice case flow: waiting for the title of a just-recorded voice case.
+    if (await this.handleVoiceTitle(ctx, tgId)) return;
 
     // Admin "create store" flow: waiting for the store name (set by button/`/newstore`).
     const awaitKey = `awaitStoreName:${tgId}`;

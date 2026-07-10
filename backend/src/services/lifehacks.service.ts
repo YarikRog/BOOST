@@ -96,6 +96,7 @@ export class LifehacksService {
           tried,
           ok,
           rate: tried > 0 ? Math.round((ok / tried) * 100) : 0,
+          has_voice: !!content.voice_file_id,
           sit: content.sit ?? '',
           do: content.do ?? '',
           why: content.why ?? '',

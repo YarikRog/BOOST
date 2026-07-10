@@ -19,7 +19,7 @@ export class WorkItemsController {
   @Post('lifehacks/:id/take')
   @UseGuards(TelegramInitDataGuard)
   take(@Param('id') lifehackId: string, @Req() req: AuthedRequest) {
-    return this.workItems.take(req.appUser.id, lifehackId);
+    return this.workItems.take(req.appUser.id, lifehackId, req.appUser.telegram_id);
   }
 
   // POST /work-items/:id/result
