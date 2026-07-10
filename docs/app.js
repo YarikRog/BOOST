@@ -187,9 +187,22 @@ function openDetail(i){
   document.getElementById('d-react-card').classList.toggle('hidden', mine);
   document.getElementById('d-take').classList.toggle('hidden', mine);
   document.getElementById('d-mine-note').classList.toggle('hidden', !mine);
+  // Delete: author, or admin on any case.
+  const canDelete = LIVE && me && (mine || me.role==='MEGA_ADMIN' || me.role==='REGIONAL_IT_LEAD');
+  document.getElementById('d-delete').classList.toggle('hidden', !canDelete);
   const t=document.getElementById('d-take'); t.className='take'; t.textContent='📌 Беру в роботу';
   if(mine) t.classList.add('hidden');
   show('detail');
+}
+
+function deleteCase(){
+  if(!curItem || !curItem.id) return;
+  const id = curItem.id;
+  const doDel = ()=> api('/lifehacks/'+encodeURIComponent(id)+'/delete', { method:'POST' })
+    .then(()=>{ toast('Кейс видалено 🗑'); loadStats(); loadFeed(curCat); setTimeout(()=>show('feed'),500); })
+    .catch(e => toast('⚠️ '+e.message.slice(0,60)));
+  if(tg && tg.showConfirm){ tg.showConfirm('Видалити цей кейс?', ok=>{ if(ok) doDel(); }); }
+  else if(confirm('Видалити цей кейс?')){ doDel(); }
 }
 
 // Work items in progress. Demo mode seeds one so the flow is clickable offline.

@@ -41,6 +41,15 @@ export class LifehacksController {
     });
   }
 
+  // POST /lifehacks/:id/delete — author or admin removes a case.
+  @Post(':id/delete')
+  @UseGuards(TelegramInitDataGuard)
+  remove(@Param('id') id: string, @Req() req: AuthedRequest) {
+    const isAdmin =
+      req.appUser.role === 'MEGA_ADMIN' || req.appUser.role === 'REGIONAL_IT_LEAD';
+    return this.lifehacks.remove(req.appUser.id, isAdmin, id);
+  }
+
   // GET /lifehacks/me/stats — real profile stats for the current user.
   @Get('me/stats')
   @UseGuards(TelegramInitDataGuard)

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../integrations/supabase.client';
 import { RedisService } from '../integrations/redis.client';
@@ -88,6 +88,28 @@ export class LifehacksService {
       '🎙️ Натисни значок мікрофона внизу і надиктуй кейс (до 60 сек). ' +
         'Запиши й надішли голосове — я попрошу лише короткий заголовок.',
     );
+    return { ok: true };
+  }
+
+  /** Delete a lifehack (author or admin). Cleans dependent rows first. */
+  async remove(userId: string, isAdmin: boolean, lifehackId: string): Promise<{ ok: true }> {
+    const { data: lh } = await this.supabase.db
+      .from('lifehacks')
+      .select('author_id, category_id')
+      .eq('id', lifehackId)
+      .maybeSingle();
+    if (!lh) throw new BadRequestException('Кейс не знайдено.');
+    const row = lh as { author_id: string; category_id: string };
+    if (row.author_id !== userId && !isAdmin) {
+      throw new ForbiddenException('Можна видаляти лише власний кейс.');
+    }
+
+    await this.supabase.db.from('reactions').delete().eq('lifehack_id', lifehackId);
+    await this.supabase.db.from('work_items').delete().eq('lifehack_id', lifehackId);
+    const { error } = await this.supabase.db.from('lifehacks').delete().eq('id', lifehackId);
+    if (error) throw error;
+
+    await this.redis.invalidateFeed(row.category_id);
     return { ok: true };
   }
 
