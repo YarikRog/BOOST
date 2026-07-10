@@ -12,9 +12,9 @@ const PRODUCTS = {
 const ROLE_LABELS = {
   MEGA_ADMIN: 'Адміністратор',
   REGIONAL_IT_LEAD: 'Регіональний ІТ-лід',
-  DIRECTOR: 'Директор магазину',
+  DIRECTOR: 'Директор (Store IT-лід)',
   DEP_DIRECTOR: 'Заступник директора',
-  SELLER: 'Продавець',
+  SELLER: 'Продавець (IT-експерт)',
 };
 let catBySlug = {}; // slug → {id, name}
 let me = null;      // current user (live mode)

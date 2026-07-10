@@ -30,6 +30,15 @@ interface OnboardState {
 }
 
 const ADMIN_NEW_STORE_BTN = '🏪 Створити магазин';
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  [UserRole.MEGA_ADMIN]: 'Адміністратор',
+  [UserRole.REGIONAL_IT_LEAD]: 'Регіональний ІТ-лід',
+  [UserRole.DIRECTOR]: 'Директор (Store IT-лід)',
+  [UserRole.DEP_DIRECTOR]: 'Заступник директора',
+  [UserRole.SELLER]: 'Продавець (IT-експерт)',
+};
+const roleLabel = (r: UserRole): string => ROLE_LABELS[r] ?? r;
 const BTN_INV_REGIONAL = '➕ Рег. ІТ-лід';
 const BTN_INV_DIRECTOR = '➕ Директор';
 const BTN_INV_SELLER = '➕ Продавець';
@@ -374,7 +383,7 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       await this.setMenuButton(tgId);
       const kb = this.keyboardFor(existing.role);
       await ctx.reply(
-        `Вітаю знову! Роль: ${existing.role}`,
+        `Вітаю знову! Роль: ${roleLabel(existing.role)}`,
         kb ? { reply_markup: kb } : undefined,
       );
       await this.sendAppButton(ctx);
@@ -406,7 +415,7 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
         const role = kind === 'dir' ? UserRole.DIRECTOR : UserRole.SELLER;
         const user = await this.users.joinStoreDirect(tgId, storeId, role, name);
         await this.setState(tgId, { userId: user.id, role: user.role, step: 'phone', storeAssigned: true });
-        await ctx.reply(`Вітаємо! Роль: ${user.role}. Завершимо вхід.`);
+        await ctx.reply(`Вітаємо! Роль: ${roleLabel(user.role)}. Завершимо вхід.`);
         await this.askPhone(ctx);
       } catch (e) {
         await ctx.reply(`❌ ${(e as Error).message}`);
@@ -418,12 +427,12 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       const { user, needsStoreCreation } = await this.invites.consume(payload, { id: tgId, name });
       // If already fully onboarded, just greet + app button.
       if (user.phone && user.experience_segment && !needsStoreCreation) {
-        await ctx.reply(`Вітаю знову! Роль: ${user.role}`);
+        await ctx.reply(`Вітаю знову! Роль: ${roleLabel(user.role)}`);
         await this.sendAppButton(ctx);
         return;
       }
       await this.setState(tgId, { userId: user.id, role: user.role, step: 'phone' });
-      await ctx.reply(`Вас запрошено як: ${user.role}. Завершимо вхід.`);
+      await ctx.reply(`Вас запрошено як: ${roleLabel(user.role)}. Завершимо вхід.`);
       await this.askPhone(ctx);
     } catch (e) {
       await ctx.reply(`❌ ${(e as Error).message}`);
