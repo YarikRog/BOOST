@@ -30,6 +30,10 @@ interface OnboardState {
 }
 
 const ADMIN_NEW_STORE_BTN = '🏪 Створити магазин';
+const BTN_INV_REGIONAL = '➕ Рег. ІТ-лід';
+const BTN_INV_DIRECTOR = '➕ Директор';
+const BTN_INV_SELLER = '➕ Продавець';
+const BTN_INV_DEP = '➕ Заступник';
 
 const EXPERIENCE_LABELS: Record<Experience, string> = {
   [Experience.lt_6m]: 'До 6 місяців',
@@ -116,11 +120,16 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       const tgId = ctx.from?.id;
       return tgId ? this.promptStoreName(ctx, tgId) : Promise.resolve();
     });
+    bot.hears(BTN_INV_REGIONAL, (ctx) => this.startInvite(ctx, UserRole.REGIONAL_IT_LEAD));
+    bot.hears(BTN_INV_DIRECTOR, (ctx) => this.startInvite(ctx, UserRole.DIRECTOR));
+    bot.hears(BTN_INV_SELLER, (ctx) => this.startInvite(ctx, UserRole.SELLER));
+    bot.hears(BTN_INV_DEP, (ctx) => this.startInvite(ctx, UserRole.DEP_DIRECTOR));
     bot.on(':contact', (ctx) => this.onContact(ctx));
     bot.on('message:voice', (ctx) => this.onVoice(ctx));
     bot.callbackQuery(/^exp:(.+)$/, (ctx) => this.onExperience(ctx));
     bot.callbackQuery(/^ns:(confirm|edit)$/, (ctx) => this.onNewStoreConfirm(ctx));
     bot.callbackQuery(/^vpub:(confirm|edit|cancel)$/, (ctx) => this.onVoicePublish(ctx));
+    bot.callbackQuery(/^cancelflow$/, (ctx) => this.onCancelFlow(ctx));
     bot.on('message:text', (ctx) => this.onText(ctx));
     bot.catch((err) => this.logger.error(`Bot error: ${err.message}`));
   }
@@ -195,13 +204,33 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     }
   }
 
-  /** Reply keyboard shown to admins so store creation is one tap away. */
-  private adminKeyboard(): Keyboard {
-    return new Keyboard().text(ADMIN_NEW_STORE_BTN).resized();
+  /** Role-appropriate reply keyboard (store creation / invites). */
+  private keyboardFor(role: UserRole): Keyboard | undefined {
+    switch (role) {
+      case UserRole.MEGA_ADMIN:
+        return new Keyboard().text(ADMIN_NEW_STORE_BTN).row().text(BTN_INV_REGIONAL).resized();
+      case UserRole.REGIONAL_IT_LEAD:
+        return new Keyboard().text(ADMIN_NEW_STORE_BTN).row().text(BTN_INV_DIRECTOR).resized();
+      case UserRole.DIRECTOR:
+      case UserRole.DEP_DIRECTOR:
+        return new Keyboard().text(BTN_INV_SELLER).text(BTN_INV_DEP).resized();
+      default:
+        return undefined; // SELLER — no admin actions
+    }
   }
 
   private isAdmin(role: UserRole): boolean {
     return role === UserRole.MEGA_ADMIN || role === UserRole.REGIONAL_IT_LEAD;
+  }
+
+  /** Clear any half-finished bot flow so the user is never stuck. */
+  private async clearTransientFlow(tgId: number): Promise<void> {
+    await this.redis.client.del(
+      `awaitStoreName:${tgId}`,
+      `pendingStoreName:${tgId}`,
+      `awaitRegionName:${tgId}`,
+      this.voiceKey(tgId),
+    );
   }
 
   /** Button/`/newstore` with no name → ask for the store name (state in Redis). */
@@ -212,7 +241,68 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       return;
     }
     await this.redis.client.set(`awaitStoreName:${tgId}`, '1', 'EX', 300);
-    await ctx.reply('Введи назву магазину (напр. «Обухів»):');
+    await ctx.reply('Введи назву магазину (напр. «Обухів»):', {
+      reply_markup: new InlineKeyboard().text('❌ Скасувати', 'cancelflow'),
+    });
+  }
+
+  /** Cancel any pending flow (store/region name entry, voice case). */
+  private async onCancelFlow(ctx: Context): Promise<void> {
+    const tgId = ctx.from?.id;
+    if (!tgId) return;
+    await ctx.answerCallbackQuery();
+    await this.clearTransientFlow(tgId);
+    await this.redis.client.del(`voiceIntent:${tgId}`);
+    await ctx.reply('❌ Скасовано.');
+  }
+
+  /** Invite a user of a given role and reply with the deep link + share buttons. */
+  private async startInvite(ctx: Context, targetRole: UserRole): Promise<void> {
+    const tgId = ctx.from?.id;
+    if (!tgId) return;
+    const creator = await this.users.findByTelegramId(tgId);
+    if (!creator) return;
+
+    // MEGA_ADMIN invites a REGIONAL — needs a region first (ask its name).
+    if (targetRole === UserRole.REGIONAL_IT_LEAD) {
+      await this.redis.client.set(`awaitRegionName:${tgId}`, '1', 'EX', 300);
+      await ctx.reply('Введи назву регіону (напр. «Житомирська область»):', {
+        reply_markup: new InlineKeyboard().text('❌ Скасувати', 'cancelflow'),
+      });
+      return;
+    }
+
+    try {
+      const invite = await this.invites.create(creator, targetRole);
+      await this.sendInviteLink(ctx, targetRole, invite.deepLink);
+    } catch (e) {
+      await ctx.reply(`❌ ${(e as Error).message}`);
+    }
+  }
+
+  private async sendInviteLink(
+    ctx: Context,
+    role: UserRole,
+    deepLink: string | null,
+  ): Promise<void> {
+    if (!deepLink) {
+      await ctx.reply('❌ BOT_USERNAME не налаштовано — не можу зібрати посилання.');
+      return;
+    }
+    const label: Record<string, string> = {
+      [UserRole.REGIONAL_IT_LEAD]: 'регіонального ІТ-ліда',
+      [UserRole.DIRECTOR]: 'директора',
+      [UserRole.DEP_DIRECTOR]: 'заступника',
+      [UserRole.SELLER]: 'продавця',
+    };
+    const share = `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(
+      'Долучайся до BOOST:',
+    )}`;
+    const kb = new InlineKeyboard().url('📤 Переслати', share);
+    await ctx.reply(
+      `✅ Посилання-запрошення для ${label[role] ?? 'співробітника'} (одноразове, дійсне 7 днів):\n${deepLink}`,
+      { reply_markup: kb },
+    );
   }
 
   /** Handles the ✅ Підтвердити / ✏️ Змінити buttons on the confirmation prompt. */
@@ -275,13 +365,17 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     const name = [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || undefined;
     const payload = (ctx.match as string | undefined)?.trim();
 
+    // /start always unsticks any half-finished flow.
+    await this.clearTransientFlow(tgId);
+
     // Already onboarded — re-entry regardless of which link they used.
     const existing = await this.users.findByTelegramId(tgId);
     if (existing && existing.phone && existing.experience_segment) {
       await this.setMenuButton(tgId);
+      const kb = this.keyboardFor(existing.role);
       await ctx.reply(
         `Вітаю знову! Роль: ${existing.role}`,
-        this.isAdmin(existing.role) ? { reply_markup: this.adminKeyboard() } : undefined,
+        kb ? { reply_markup: kb } : undefined,
       );
       await this.sendAppButton(ctx);
       return;
@@ -543,6 +637,27 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     // Voice case flow: waiting for the title of a just-recorded voice case.
     if (await this.handleVoiceTitle(ctx, tgId)) return;
 
+    // Invite flow: MEGA_ADMIN entered a region name → create region + invite.
+    const regionKey = `awaitRegionName:${tgId}`;
+    if (await this.redis.client.get(regionKey)) {
+      const regionName = ctx.message?.text?.trim();
+      if (!regionName) return;
+      await this.redis.client.del(regionKey);
+      try {
+        const creator = await this.users.findByTelegramId(tgId);
+        if (!creator) return;
+        const region = await this.users.createRegion(regionName);
+        const invite = await this.invites.create(creator, UserRole.REGIONAL_IT_LEAD, {
+          regionId: region.id,
+        });
+        await ctx.reply(`✅ Регіон «${regionName}» створено.`);
+        await this.sendInviteLink(ctx, UserRole.REGIONAL_IT_LEAD, invite.deepLink);
+      } catch (e) {
+        await ctx.reply(`❌ ${(e as Error).message}`);
+      }
+      return;
+    }
+
     // Admin "create store" flow: waiting for the store name (set by button/`/newstore`).
     const awaitKey = `awaitStoreName:${tgId}`;
     if (await this.redis.client.get(awaitKey)) {
@@ -575,7 +690,9 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
   private async finish(ctx: Context, tgId: number): Promise<void> {
     await this.clearState(tgId);
     await this.setMenuButton(tgId);
-    await ctx.reply('✅ Вхід успішний.');
+    const user = await this.users.findByTelegramId(tgId);
+    const kb = user ? this.keyboardFor(user.role) : undefined;
+    await ctx.reply('✅ Вхід успішний.', kb ? { reply_markup: kb } : undefined);
     await this.sendAppButton(ctx);
   }
 
