@@ -48,12 +48,14 @@ export class LifehacksController {
     return this.lifehacks.authorStats(req.appUser.id);
   }
 
-  // GET /lifehacks/feed?categoryId=&audience=
+  // GET /lifehacks/feed?categorySlug=|categoryId=&audience=
   @Get('feed')
   feed(
     @Query('categoryId') categoryId: string,
+    @Query('categorySlug') categorySlug: string,
     @Query('audience') audience: 'newcomer' | 'experienced' = 'experienced',
   ) {
+    if (categorySlug) return this.lifehacks.feedBySlug(categorySlug, audience);
     return this.lifehacks.feed(categoryId, audience);
   }
 

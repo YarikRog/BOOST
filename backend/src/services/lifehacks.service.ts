@@ -126,6 +126,17 @@ export class LifehacksService {
     return { id: (data as { id: string }).id };
   }
 
+  /** Feed by category slug — one endpoint call for the WebApp (no pre-fetch). */
+  async feedBySlug(slug: string, audience: Audience): Promise<unknown[]> {
+    const { data: cat } = await this.supabase.db
+      .from('categories')
+      .select('id')
+      .eq('slug', slug)
+      .maybeSingle();
+    if (!cat) return [];
+    return this.feed((cat as { id: string }).id, audience);
+  }
+
   /** GET /lifehacks/feed?categoryId= — cached by category+audience (STACK.md §4). */
   async feed(categoryId: string, audience: Audience): Promise<unknown[]> {
     const cached = await this.redis.getFeed(categoryId, audience);
@@ -141,55 +152,59 @@ export class LifehacksService {
       .limit(50);
     if (error) throw error;
     const rows = data ?? [];
+    if (!rows.length) {
+      await this.redis.setFeed(categoryId, audience, '[]');
+      return [];
+    }
 
-    // Enrich with author display name + confirmation proof (tried/ok/rate).
-    const feed = await Promise.all(
-      rows.map(async (r) => {
-        const author = await this.authorName(r.author_id as string);
-        const { tried, ok } = await this.proofOf(r.id as string);
-        const content = (r.content_json ?? {}) as Record<string, unknown>;
-        return {
-          id: r.id,
-          title: r.title,
-          product_type: r.product_type,
-          author,
-          author_id: r.author_id,
-          tried,
-          ok,
-          rate: tried > 0 ? Math.round((ok / tried) * 100) : 0,
-          has_voice: !!content.voice_file_id,
-          sit: content.sit ?? '',
-          do: content.do ?? '',
-          why: content.why ?? '',
-        };
-      }),
+    // Batch-enrich (no N+1): one query for authors, one for all work-items.
+    const authorIds = [...new Set(rows.map((r) => r.author_id as string))];
+    const lifehackIds = rows.map((r) => r.id as string);
+
+    const [{ data: users }, { data: wis }] = await Promise.all([
+      this.supabase.db.from('users').select('id, name, status').in('id', authorIds),
+      this.supabase.db.from('work_items').select('lifehack_id, status').in('lifehack_id', lifehackIds),
+    ]);
+
+    const userById = new Map(
+      (users ?? []).map((u) => [u.id as string, u as { name: string | null; status: string }]),
     );
+    const statusesByLh = new Map<string, WorkItemStatus[]>();
+    (wis ?? []).forEach((w) => {
+      const arr = statusesByLh.get(w.lifehack_id as string) ?? [];
+      arr.push(w.status as WorkItemStatus);
+      statusesByLh.set(w.lifehack_id as string, arr);
+    });
+
+    const feed = rows.map((r) => {
+      const u = userById.get(r.author_id as string);
+      const author = !u
+        ? 'Архівний автор'
+        : u.status === 'archived'
+          ? 'Колишній співробітник'
+          : u.name || 'Продавець';
+      const c = ScoringService.tallyOutcomes(statusesByLh.get(r.id as string) ?? []);
+      const tried = c.success + c.partial + c.fail;
+      const ok = c.success;
+      const content = (r.content_json ?? {}) as Record<string, unknown>;
+      return {
+        id: r.id,
+        title: r.title,
+        product_type: r.product_type,
+        author,
+        author_id: r.author_id,
+        tried,
+        ok,
+        rate: tried > 0 ? Math.round((ok / tried) * 100) : 0,
+        has_voice: !!content.voice_file_id,
+        sit: content.sit ?? '',
+        do: content.do ?? '',
+        why: content.why ?? '',
+      };
+    });
 
     await this.redis.setFeed(categoryId, audience, JSON.stringify(feed));
     return feed;
-  }
-
-  private async authorName(authorId: string): Promise<string> {
-    const { data } = await this.supabase.db
-      .from('users')
-      .select('name, status')
-      .eq('id', authorId)
-      .maybeSingle();
-    if (!data) return 'Архівний автор';
-    const u = data as { name: string | null; status: string };
-    if (u.status === 'archived') return 'Колишній співробітник';
-    return u.name || 'Продавець';
-  }
-
-  private async proofOf(lifehackId: string): Promise<{ tried: number; ok: number }> {
-    const { data } = await this.supabase.db
-      .from('work_items')
-      .select('status')
-      .eq('lifehack_id', lifehackId);
-    const statuses = (data ?? []).map((r) => r.status as WorkItemStatus);
-    const c = ScoringService.tallyOutcomes(statuses);
-    const tried = c.success + c.partial + c.fail;
-    return { tried, ok: c.success };
   }
 
   /** Real profile stats for a user (WebApp profile screen). */

@@ -104,12 +104,11 @@ function loadCats(){
   });
 }
 
+const CAT_NAME = { it_service:'IT Service', happy_service:'Happy Service' };
 function loadFeed(tabKey){
   const slug = SLUG_FOR[tabKey];
-  const cat = catBySlug[slug];
-  if(!cat){ curList=[]; renderFeed(); return; }
-  api('/lifehacks/feed?categoryId=' + encodeURIComponent(cat.id))
-    .then(rows => { curList = (rows||[]).map(r => normLive(r, cat.name)); renderFeed(); })
+  api('/lifehacks/feed?categorySlug=' + encodeURIComponent(slug))
+    .then(rows => { curList = (rows||[]).map(r => normLive(r, CAT_NAME[slug]||'')); renderFeed(); })
     .catch(e => { curList=[]; renderFeed(); toast('⚠️ '+e.message.slice(0,60)); });
 }
 
@@ -376,12 +375,11 @@ if(LIVE){
   // In live mode the prototype scaffolding is off.
   const ribbon=document.querySelector('.ribbon'); if(ribbon) ribbon.style.display='none';
   const hint=document.getElementById('hint'); if(hint) hint.style.display='none';
-  loadMe()
-    .then(loadCats)
-    .then(loadActive)
-    .then(loadStats)
-    .then(()=>loadFeed('it'))
-    .catch(e=>{ curList=[]; renderFeed(); toast('⚠️ '+e.message.slice(0,70)); });
+  // Feed is the main content — one request, shown immediately.
+  loadFeed('it');
+  // Everything else loads in parallel and updates the UI when ready.
+  loadMe().then(loadStats).catch(()=>{});
+  loadActive().catch(()=>{});
 } else {
   curList = DATA.it; renderFeed(); updateInwork();
 }
