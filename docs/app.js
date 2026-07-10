@@ -274,16 +274,19 @@ function selectChip(el){
 
 function renderProducts(slug){
   const list = PRODUCTS[slug] || [];
-  document.getElementById('prod-chips').innerHTML = list.map((p,i)=>
-    `<div class="chip${i===0?' on':''}" onclick="selectChip(this)">${p}</div>`).join('');
+  // Nothing pre-selected — the user picks the product themselves.
+  document.getElementById('prod-chips').innerHTML = list.map((p)=>
+    `<div class="chip" onclick="selectChip(this)">${p}</div>`).join('');
 }
 
-// "+" → prep the create screen: category pre-selected from the current feed tab.
+// "+" → open a clean create screen: nothing pre-selected, user chooses.
 function openCreate(){
-  createSlug = SLUG_FOR[curCat] || 'it_service';
-  document.querySelectorAll('#cat-chips .chip').forEach(c=>
-    c.classList.toggle('on', c.getAttribute('data-slug')===createSlug));
-  renderProducts(createSlug);
+  createSlug = '';
+  document.querySelectorAll('#cat-chips .chip').forEach(c=>c.classList.remove('on'));
+  document.getElementById('prod-chips').innerHTML =
+    '<div class="sub" style="font-size:12px">Обери категорію вище →</div>';
+  document.getElementById('c-title').value='';
+  document.getElementById('c-body').value='';
   show('create');
 }
 
@@ -291,6 +294,7 @@ function publish(){
   const prodEl = document.querySelector('#prod-chips .chip.on');
   let title = (document.getElementById('c-title').value||'').trim();
   const body = (document.getElementById('c-body').value||'').trim();
+  if(!createSlug){ toast('Обери категорію'); return; }
   if(!body){ toast('Опиши кейс кількома словами'); return; }
   if(!title) title = body.split(/[.!?\n]/)[0].slice(0,60); // derive from first sentence
 
@@ -330,7 +334,7 @@ function recordVoice(){
     categorySlug: catEl.getAttribute('data-slug'),
     productType: prodEl ? prodEl.textContent.trim() : ''
   };
-  api('/voice-intent', {
+  api('/lifehacks/voice-intent', {
     method:'POST', headers:{ 'content-type':'application/json' },
     body: JSON.stringify(payload)
   }).then(()=>{
@@ -348,6 +352,7 @@ function toast(m){
 // ===== Init =====
 renderProducts('it_service');
 if(LIVE){
+  document.body.classList.add('tg'); // fill the whole Telegram webview
   try{ tg.ready(); tg.expand(); }catch(e){}
   // In live mode the prototype scaffolding is off.
   const ribbon=document.querySelector('.ribbon'); if(ribbon) ribbon.style.display='none';
@@ -365,8 +370,10 @@ if(LIVE){
 function applyTheme(theme){
   const phone=document.querySelector('.phone');
   const toggle=document.getElementById('theme-toggle');
-  if(theme==='dark'){ phone.classList.add('dark'); toggle.textContent='☀️'; }
-  else { phone.classList.remove('dark'); toggle.textContent='🌙'; }
+  const dark = theme==='dark';
+  phone.classList.toggle('dark', dark);
+  document.body.classList.toggle('dark', dark); // for body.tg.dark background
+  toggle.textContent = dark ? '☀️' : '🌙';
   localStorage.setItem('theme',theme);
 }
 function toggleTheme(){
