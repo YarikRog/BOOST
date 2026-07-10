@@ -40,6 +40,13 @@ export class LifehacksController {
     });
   }
 
+  // GET /lifehacks/me/stats — real profile stats for the current user.
+  @Get('me/stats')
+  @UseGuards(TelegramInitDataGuard)
+  myStats(@Req() req: AuthedRequest) {
+    return this.lifehacks.authorStats(req.appUser.id);
+  }
+
   // GET /lifehacks/feed?categoryId=&audience=
   @Get('feed')
   feed(

@@ -86,6 +86,17 @@ function loadMe(){
   });
 }
 
+function loadStats(){
+  return api('/lifehacks/me/stats').then(s => {
+    document.getElementById('st-written').textContent = s.written ?? 0;
+    document.getElementById('st-confirmed').textContent = s.confirmed ?? 0;
+    document.getElementById('st-eff').textContent = (s.effectiveness ?? 0) + '%';
+    const by = s.byCategory || {};
+    document.getElementById('st-cat-it').textContent = (by.it_service || 0) + ' кейс(ів)';
+    document.getElementById('st-cat-happy').textContent = (by.happy_service || 0) + ' кейс(ів)';
+  }).catch(()=>{});
+}
+
 function loadCats(){
   return api('/categories').then(list => {
     catBySlug = {};
@@ -360,6 +371,7 @@ if(LIVE){
   loadMe()
     .then(loadCats)
     .then(loadActive)
+    .then(loadStats)
     .then(()=>loadFeed('it'))
     .catch(e=>{ curList=[]; renderFeed(); toast('⚠️ '+e.message.slice(0,70)); });
 } else {

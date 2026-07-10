@@ -384,7 +384,7 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     if (!tgId) return;
 
     const user = await this.users.findByTelegramId(tgId);
-    if (!user || !user.phone || !user.store_id) {
+    if (!user || !user.phone) {
       await ctx.reply('🔒 Спочатку заверши вхід через посилання від директора.');
       return;
     }

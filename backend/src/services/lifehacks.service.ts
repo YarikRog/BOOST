@@ -144,6 +144,47 @@ export class LifehacksService {
     return { tried, ok: c.success };
   }
 
+  /** Real profile stats for a user (WebApp profile screen). */
+  async authorStats(userId: string): Promise<{
+    written: number;
+    confirmed: number;
+    effectiveness: number;
+    byCategory: Record<string, number>;
+  }> {
+    const { data: mine } = await this.supabase.db
+      .from('lifehacks')
+      .select('id, category_id')
+      .eq('author_id', userId)
+      .eq('status', LifehackStatus.published);
+    const rows = mine ?? [];
+    const written = rows.length;
+
+    // Per-category counts keyed by slug.
+    const { data: cats } = await this.supabase.db.from('categories').select('id, slug');
+    const slugById = new Map((cats ?? []).map((c) => [c.id as string, c.slug as string]));
+    const byCategory: Record<string, number> = {};
+    rows.forEach((r) => {
+      const s = slugById.get(r.category_id as string);
+      if (s) byCategory[s] = (byCategory[s] ?? 0) + 1;
+    });
+
+    // Confirmations on my cases → confirmed (successes) + effectiveness.
+    let tried = 0;
+    let ok = 0;
+    if (rows.length) {
+      const ids = rows.map((r) => r.id as string);
+      const { data: wis } = await this.supabase.db
+        .from('work_items')
+        .select('status')
+        .in('lifehack_id', ids);
+      const c = ScoringService.tallyOutcomes((wis ?? []).map((w) => w.status as WorkItemStatus));
+      tried = c.success + c.partial + c.fail;
+      ok = c.success;
+    }
+    const effectiveness = tried > 0 ? Math.round((ok / tried) * 100) : 0;
+    return { written, confirmed: ok, effectiveness, byCategory };
+  }
+
   /** Recompute a lifehack's quality via the ONE scoring function. */
   async qualityOf(lifehackId: string) {
     const { data, error } = await this.supabase.db
