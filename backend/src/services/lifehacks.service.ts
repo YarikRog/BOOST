@@ -30,6 +30,19 @@ export class LifehacksService {
     return segment === Experience.lt_6m ? 'newcomer' : 'experienced';
   }
 
+  /**
+   * WebApp stores the chosen category/product before the user records a voice
+   * note in the bot. The bot reads this to publish the voice case — enforcing
+   * "pick category first". 15-min TTL, keyed by telegram id.
+   */
+  async setVoiceIntent(
+    telegramId: number,
+    intent: { categorySlug: string; productType: string },
+  ): Promise<{ ok: true }> {
+    await this.redis.client.set(`voiceIntent:${telegramId}`, JSON.stringify(intent), 'EX', 900);
+    return { ok: true };
+  }
+
   /** Create + publish a lifehack (WebApp create flow). Returns the new id. */
   async create(author: UserRow, input: CreateLifehackInput): Promise<{ id: string }> {
     const title = input.title?.trim();

@@ -64,7 +64,7 @@ function normLive(x, catName){
   return {
     id:x.id, author_id:x.author_id, cat:catName, tier:tierOf(x.tried||0), title:x.title,
     sub:x.product_type||'', rate:x.rate||0, tried:x.tried||0, ok:x.ok||0,
-    author:x.author||'Продавець', sit:x.sit||'', do:x.do||'', why:x.why||''
+    author:x.author||'Продавець', sit:x.sit||'', do:x.do||'', why:x.why||'', has_voice:!!x.has_voice
   };
 }
 
@@ -134,8 +134,8 @@ function renderFeed(){
     return `
     <div class="card" onclick="openDetail(${i})">
       <span class="cat">${d.cat}</span><span class="tier">${d.tier}</span>
-      <h3>${d.title}</h3>
-      <div class="sub">${d.sub}</div>
+      <h3>${d.has_voice?'🎙️ ':''}${d.title}</h3>
+      <div class="sub">${d.sub}${d.has_voice?' · голосовий':''}</div>
       ${proof}
       ${foot}
     </div>`;
@@ -160,7 +160,9 @@ function openDetail(i){
     : `<div class="txt" style="color:#64748b">Новий кейс — ще немає підтверджень</div>`;
   document.getElementById('d-proof').style.background = d.tried>0 ? 'var(--good-soft)' : '#f1f5f9';
   document.getElementById('d-sit').textContent=d.sit;
-  document.getElementById('d-do').textContent=d.do;
+  document.getElementById('d-do').textContent = d.has_voice
+    ? '🎧 Голосовий кейс. Візьми в роботу — бот пришле тобі голосове автора.'
+    : d.do;
   document.getElementById('d-why').textContent=d.why;
   document.getElementById('d-author').textContent='Автор: '+d.author;
   // You cannot take or react to your own case.
@@ -319,12 +321,22 @@ function publish(){
 
 // Voice cases are recorded in the bot chat (native mic = zero friction).
 function recordVoice(){
-  if(tg && tg.close){
-    toast('🎙️ Запиши голосове боту');
-    setTimeout(()=>tg.close(), 700);
-  } else {
-    toast('🎙️ Відкрий у Telegram, щоб записати голосове');
-  }
+  const catEl = document.querySelector('#cat-chips .chip.on');
+  const prodEl = document.querySelector('#prod-chips .chip.on');
+  if(!catEl){ toast('Спочатку обери категорію'); return; }
+  if(!(tg && tg.close)){ toast('Відкрий у Telegram, щоб записати голосове'); return; }
+  if(!LIVE){ toast('У Telegram запишеш голосове боту'); return; }
+  const payload = {
+    categorySlug: catEl.getAttribute('data-slug'),
+    productType: prodEl ? prodEl.textContent.trim() : ''
+  };
+  api('/voice-intent', {
+    method:'POST', headers:{ 'content-type':'application/json' },
+    body: JSON.stringify(payload)
+  }).then(()=>{
+    toast('Тепер запиши голосове боту');
+    setTimeout(()=>tg.close(), 900);
+  }).catch(e => toast('warn '+e.message.slice(0,60)));
 }
 
 let tT;

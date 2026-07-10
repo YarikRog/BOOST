@@ -16,7 +16,8 @@ import { Experience, UserRole } from '../common/enums';
 interface VoiceFlow {
   fileId: string;
   slug?: string;
-  step: 'category' | 'title';
+  product?: string;
+  step: 'title';
 }
 
 type OnboardStep = 'phone' | 'experience' | 'store' | 'done';
@@ -118,7 +119,6 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     bot.on('message:voice', (ctx) => this.onVoice(ctx));
     bot.callbackQuery(/^exp:(.+)$/, (ctx) => this.onExperience(ctx));
     bot.callbackQuery(/^ns:(confirm|edit)$/, (ctx) => this.onNewStoreConfirm(ctx));
-    bot.callbackQuery(/^vcat:(.+)$/, (ctx) => this.onVoiceCategory(ctx));
     bot.on('message:text', (ctx) => this.onText(ctx));
     bot.catch((err) => this.logger.error(`Bot error: ${err.message}`));
   }
@@ -276,6 +276,7 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     // Already onboarded — re-entry regardless of which link they used.
     const existing = await this.users.findByTelegramId(tgId);
     if (existing && existing.phone && existing.experience_segment) {
+      await this.setMenuButton(tgId);
       await ctx.reply(
         `Вітаю знову! Роль: ${existing.role}`,
         this.isAdmin(existing.role) ? { reply_markup: this.adminKeyboard() } : undefined,
@@ -372,12 +373,8 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     }
   }
 
-  /**
-   * Voice cases: the WebApp "record" button sends users here to record a normal
-   * Telegram voice message (native mic = zero friction). We stash the file_id as
-   * a pending draft; transcription (Whisper) + category pick is the next step.
-   */
-  // ── Voice case flow: voice → pick category → title → publish ──────
+  // ── Voice case flow: category is chosen in the WebApp first (voiceIntent),
+  //    then the user records a voice note here; bot only asks for a title. ──
   private voiceKey(tgId: number): string {
     return `voiceFlow:${tgId}`;
   }
@@ -395,29 +392,26 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     const fileId = ctx.message?.voice?.file_id;
     if (!fileId) return;
 
-    const flow: VoiceFlow = { fileId, step: 'category' };
+    // Category is mandatory and must have been chosen in the WebApp first.
+    const intentRaw = await this.redis.client.get(`voiceIntent:${tgId}`);
+    if (!intentRaw) {
+      await ctx.reply(
+        '🎙️ Спочатку обери категорію і товар у застосунку (кнопка «📲 BOOST» знизу) → ' +
+          'натисни «Записати голосом», і аж тоді надішли голосове.',
+      );
+      return;
+    }
+    const intent = JSON.parse(intentRaw) as { categorySlug: string; productType: string };
+
+    const flow: VoiceFlow = {
+      fileId,
+      slug: intent.categorySlug,
+      product: intent.productType,
+      step: 'title',
+    };
     await this.redis.client.set(this.voiceKey(tgId), JSON.stringify(flow), 'EX', 1800);
-
-    const cats = await this.categories.list();
-    const kb = new InlineKeyboard();
-    cats.forEach((c) => kb.text(c.name, `vcat:${c.slug}`).row());
-    await ctx.reply('🎙️ Голосове отримано! До якої категорії кейс?', { reply_markup: kb });
-  }
-
-  private async onVoiceCategory(ctx: Context): Promise<void> {
-    const tgId = ctx.from?.id;
-    if (!tgId) return;
-    await ctx.answerCallbackQuery();
-
-    const raw = await this.redis.client.get(this.voiceKey(tgId));
-    if (!raw) return;
-    const flow = JSON.parse(raw) as VoiceFlow;
-    if (flow.step !== 'category') return;
-
-    flow.slug = (ctx.match as RegExpMatchArray)[1];
-    flow.step = 'title';
-    await this.redis.client.set(this.voiceKey(tgId), JSON.stringify(flow), 'EX', 1800);
-    await ctx.reply('Введи короткий заголовок кейсу (напр. «Гарантія через питання»):');
+    await this.redis.client.del(`voiceIntent:${tgId}`);
+    await ctx.reply('🎙️ Голосове отримано! Введи короткий заголовок кейсу:');
   }
 
   /** Called from onText when a voice flow is awaiting its title. */
@@ -437,7 +431,7 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     try {
       await this.lifehacks.create(user, {
         categorySlug: flow.slug,
-        productType: '',
+        productType: flow.product ?? '',
         title,
         content: { voice_file_id: flow.fileId },
       });
@@ -540,6 +534,7 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
 
   private async finish(ctx: Context, tgId: number): Promise<void> {
     await this.clearState(tgId);
+    await this.setMenuButton(tgId);
     await ctx.reply('✅ Вхід успішний.');
     await this.sendAppButton(ctx);
   }
@@ -552,5 +547,19 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     }
     const kb = new InlineKeyboard().webApp('📲 Відкрити застосунок', webAppUrl);
     await ctx.reply('Відкрий базу кейсів:', { reply_markup: kb });
+  }
+
+  /** Pin the WebApp to the native bottom-left menu button for this user. */
+  private async setMenuButton(chatId: number): Promise<void> {
+    const url = this.config.get<string>('WEBAPP_URL');
+    if (!this.bot || !url) return;
+    try {
+      await this.bot.api.setChatMenuButton({
+        chat_id: chatId,
+        menu_button: { type: 'web_app', text: '📲 BOOST', web_app: { url } },
+      });
+    } catch (e) {
+      this.logger.error(`setChatMenuButton for ${chatId} failed: ${(e as Error).message}`);
+    }
   }
 }

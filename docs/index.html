@@ -76,15 +76,7 @@
   <div class="screen hidden" id="screen-create">
     <div class="pad">
       <h2 style="font-size:20px;margin:6px 0 0">Новий кейс</h2>
-      <p style="font-size:13px;color:var(--muted);margin:4px 0 0">Розкажи голосом за 20 секунд — це найшвидше</p>
-
-      <div class="voice">
-        <div class="mic" onclick="recordVoice()">🎙️</div>
-        <b>Записати голосом</b>
-        <span>«Клієнт сумнівався, я зробив так…»</span>
-      </div>
-
-      <div class="or">— або коротко текстом —</div>
+      <p style="font-size:13px;color:var(--muted);margin:4px 0 0">Спочатку обери категорію і товар</p>
 
       <div class="fieldlab">Категорія</div>
       <div class="chips" id="cat-chips">
@@ -94,6 +86,14 @@
 
       <div class="fieldlab">Товар</div>
       <div class="chips" id="prod-chips"></div>
+
+      <div class="voice" style="margin-top:18px">
+        <div class="mic" onclick="recordVoice()">🎙️</div>
+        <b>Записати голосом</b>
+        <span>Найшвидше — наговори за 20 секунд у боті</span>
+      </div>
+
+      <div class="or">— або коротко текстом —</div>
 
       <div class="fieldlab">Заголовок <span style="font-weight:400;color:var(--muted)">(необов'язково)</span></div>
       <input id="c-title" type="text" placeholder="Якщо пусто — візьмемо з опису"
