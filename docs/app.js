@@ -169,11 +169,15 @@ function openDetail(i){
     ? `<div class="big">${d.rate}%</div><div class="bar"><i style="width:${d.rate}%"></i></div><div class="txt">спрацювало · ${d.ok} з ${d.tried} підтвердили</div>`
     : `<div class="txt" style="color:var(--muted)">Новий кейс — ще немає підтверджень</div>`;
   document.getElementById('d-proof').style.background = d.tried>0 ? 'var(--good-soft)' : 'var(--chip)';
-  document.getElementById('d-sit').textContent=d.sit;
-  document.getElementById('d-do').textContent = d.has_voice
-    ? '🎧 Голосовий кейс — послухай запис вище.'
-    : d.do;
-  document.getElementById('d-why').textContent=d.why;
+  const doText = d.has_voice ? '🎧 Голосовий кейс — послухай запис вище.' : d.do;
+  document.getElementById('d-sit').textContent = d.sit;
+  document.getElementById('d-do').textContent = doText;
+  document.getElementById('d-why').textContent = d.why;
+  // Hide empty blocks (the current form only fills "Що кажу / роблю").
+  const hideEmpty = (pid, has)=>{ const p=document.getElementById(pid); if(p&&p.parentElement) p.parentElement.classList.toggle('hidden', !has); };
+  hideEmpty('d-sit', !!(d.sit && d.sit.trim()));
+  hideEmpty('d-do', !!(doText && doText.trim()));
+  hideEmpty('d-why', !!(d.why && d.why.trim()));
   // Voice player
   const audio=document.getElementById('d-audio');
   if(LIVE && d.has_voice && d.id){
