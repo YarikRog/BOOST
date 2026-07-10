@@ -124,6 +124,9 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     bot.command('newstore', (ctx) => this.onNewStore(ctx));
     bot.command('reset', (ctx) => this.onReset(ctx));
     bot.command('stores', (ctx) => this.onStores(ctx));
+    bot.command('help', (ctx) => this.onHelp(ctx));
+    bot.command('stats', (ctx) => this.onStats(ctx));
+    bot.command('users', (ctx) => this.onUsers(ctx));
     bot.callbackQuery(/^delstore:(.+)$/, (ctx) => this.onDeleteStore(ctx));
     bot.hears(ADMIN_NEW_STORE_BTN, (ctx) => {
       const tgId = ctx.from?.id;
@@ -166,6 +169,72 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       return;
     }
     await this.createStoreAndReply(ctx, storeName);
+  }
+
+  /** `/help` — list available commands (admin sees management ones). */
+  private async onHelp(ctx: Context): Promise<void> {
+    const tgId = ctx.from?.id;
+    const caller = tgId ? await this.users.findByTelegramId(tgId) : null;
+    const admin = caller ? this.isAdmin(caller.role) : false;
+
+    let text =
+      '📖 Команди:\n\n' +
+      '/start — вхід / головне меню\n' +
+      '/app — відкрити застосунок\n' +
+      '/help — цей список\n';
+    if (admin) {
+      text +=
+        '\n👑 Адмін:\n' +
+        '/stats — зведена статистика платформи\n' +
+        '/users — активність по кожному юзеру\n' +
+        '/stores — список магазинів (+ видалення)\n' +
+        '/newstore <назва> — створити магазин\n' +
+        '/reset [id] — видалити юзера (або себе)\n' +
+        '\nКнопки знизу: створити магазин, запросити ліда/директора/продавця.';
+    }
+    await ctx.reply(text);
+  }
+
+  /** Admin-only: `/stats` — platform-wide numbers. */
+  private async onStats(ctx: Context): Promise<void> {
+    const tgId = ctx.from?.id;
+    const caller = tgId ? await this.users.findByTelegramId(tgId) : null;
+    if (!caller || !this.isAdmin(caller.role)) {
+      await ctx.reply('🔒 Команда лише для адміністратора.');
+      return;
+    }
+    const s = await this.users.platformStats();
+    await ctx.reply(
+      '📊 Статистика платформи\n\n' +
+        `👥 Юзери: ${s.users} (активних ${s.activeUsers})\n` +
+        `🏪 Магазини: ${s.stores} · Регіони: ${s.regions}\n` +
+        `💡 Кейси опубліковано: ${s.lifehacks}\n\n` +
+        `📌 В роботі зараз: ${s.wc.in_work}\n` +
+        `✅ Підтверджень: ${s.confirmations} ` +
+        `(🔥 ${s.wc.success} / 😐 ${s.wc.partial} / ❌ ${s.wc.fail})\n` +
+        `⏭ Не пробували: ${s.wc.not_tried} · Протерміновано: ${s.wc.expired}\n` +
+        `🎯 Success rate: ${s.successRate}%\n\n` +
+        `🙋 Залучення: авторів ${s.engaged.authors}, тих хто брав ${s.engaged.takers}`,
+    );
+  }
+
+  /** Admin-only: `/users` — per-user activity. */
+  private async onUsers(ctx: Context): Promise<void> {
+    const tgId = ctx.from?.id;
+    const caller = tgId ? await this.users.findByTelegramId(tgId) : null;
+    if (!caller || !this.isAdmin(caller.role)) {
+      await ctx.reply('🔒 Команда лише для адміністратора.');
+      return;
+    }
+    const rows = await this.users.usersActivity();
+    if (!rows.length) {
+      await ctx.reply('Ще немає юзерів.');
+      return;
+    }
+    const lines = rows.map(
+      (r) => `• ${r.name} (${roleLabel(r.role as UserRole)}) — ✍️${r.written} 📌${r.taken} 🔥${r.success}`,
+    );
+    await ctx.reply('👥 Активність (✍️ написав · 📌 брав · 🔥 успіх):\n\n' + lines.join('\n'));
   }
 
   /** Admin-only: `/stores` lists every store with a delete button each. */

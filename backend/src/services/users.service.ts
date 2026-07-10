@@ -311,6 +311,105 @@ export class UsersService {
     return this.requireUser(userId);
   }
 
+  /** Platform-wide stats for the admin /stats command. */
+  async platformStats(): Promise<{
+    users: number;
+    activeUsers: number;
+    stores: number;
+    regions: number;
+    lifehacks: number;
+    wc: Record<string, number>;
+    confirmations: number;
+    successRate: number;
+    engaged: { authors: number; takers: number };
+  }> {
+    const db = this.supabase.db;
+    const countOf = async (
+      table: string,
+      filter?: (q: any) => any, // eslint-disable-line @typescript-eslint/no-explicit-any
+    ): Promise<number> => {
+      let q = db.from(table).select('id', { count: 'exact', head: true });
+      if (filter) q = filter(q);
+      const { count } = await q;
+      return count ?? 0;
+    };
+
+    const [users, activeUsers, stores, regions, lifehacks] = await Promise.all([
+      countOf('users'),
+      countOf('users', (q) => q.eq('status', 'active')),
+      countOf('stores'),
+      countOf('regions'),
+      countOf('lifehacks', (q) => q.eq('status', 'published')),
+    ]);
+
+    const { data: wis } = await db.from('work_items').select('user_id, status');
+    const wc: Record<string, number> = {
+      in_work: 0,
+      success: 0,
+      partial: 0,
+      fail: 0,
+      not_tried: 0,
+      expired: 0,
+    };
+    const takers = new Set<string>();
+    (wis ?? []).forEach((w) => {
+      if (wc[w.status as string] !== undefined) wc[w.status as string]++;
+      takers.add(w.user_id as string);
+    });
+
+    const { data: authorsRows } = await db
+      .from('lifehacks')
+      .select('author_id')
+      .eq('status', 'published');
+    const authors = new Set((authorsRows ?? []).map((r) => r.author_id as string));
+
+    const confirmations = wc.success + wc.partial + wc.fail;
+    const successRate = confirmations > 0 ? Math.round((wc.success / confirmations) * 100) : 0;
+    return {
+      users,
+      activeUsers,
+      stores,
+      regions,
+      lifehacks,
+      wc,
+      confirmations,
+      successRate,
+      engaged: { authors: authors.size, takers: takers.size },
+    };
+  }
+
+  /** Per-user activity (written / taken / success) for the admin /users command. */
+  async usersActivity(
+    limit = 25,
+  ): Promise<{ name: string; role: string; written: number; taken: number; success: number }[]> {
+    const db = this.supabase.db;
+    const [usersRes, lhsRes, wisRes] = await Promise.all([
+      db.from('users').select('id, name, role'),
+      db.from('lifehacks').select('author_id').eq('status', 'published'),
+      db.from('work_items').select('user_id, status'),
+    ]);
+    const written = new Map<string, number>();
+    const taken = new Map<string, number>();
+    const success = new Map<string, number>();
+    (lhsRes.data ?? []).forEach((l) =>
+      written.set(l.author_id as string, (written.get(l.author_id as string) ?? 0) + 1),
+    );
+    (wisRes.data ?? []).forEach((w) => {
+      taken.set(w.user_id as string, (taken.get(w.user_id as string) ?? 0) + 1);
+      if (w.status === 'success')
+        success.set(w.user_id as string, (success.get(w.user_id as string) ?? 0) + 1);
+    });
+    const rows = (usersRes.data ?? []).map((u) => ({
+      name: (u.name as string) || '—',
+      role: u.role as string,
+      written: written.get(u.id as string) ?? 0,
+      taken: taken.get(u.id as string) ?? 0,
+      success: success.get(u.id as string) ?? 0,
+    }));
+    rows.sort((a, b) => b.written + b.taken - (a.written + a.taken));
+    return rows.slice(0, limit);
+  }
+
   /** Display name of a store (for the WebApp header/profile). */
   async storeName(storeId: string | null): Promise<string | null> {
     if (!storeId) return null;
