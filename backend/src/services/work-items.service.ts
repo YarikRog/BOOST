@@ -120,6 +120,11 @@ export class WorkItemsService {
       .maybeSingle();
     if (lh) await this.redis.invalidateFeed((lh as { category_id: string }).category_id);
 
+    // Positive feedback loop: tell the author their case worked for a colleague.
+    if (outcome === WorkItemStatus.success) {
+      await this.bot.notifyAuthorSuccess((data as { lifehack_id: string }).lifehack_id);
+    }
+
     return data;
   }
 

@@ -15,6 +15,18 @@
     <img class="splash-logo" src="img/comfy-logo-splash.png" alt="Comfy Knowledge">
   </div>
 
+  <!-- onboarding -->
+  <div class="onb hidden" id="onb">
+    <div class="onb-card">
+      <h2>👋 Вітаємо в BOOST!</h2>
+      <div class="onb-row"><span>📰</span><p><b>Стрічка</b> — реальні прийоми продажів від колег з усіх магазинів.</p></div>
+      <div class="onb-row"><span>📌</span><p><b>Беру в роботу</b> — спробуй прийом з клієнтом, за 7 днів бот спитає результат.</p></div>
+      <div class="onb-row"><span>➕</span><p><b>Свій прийом?</b> Додай текстом або голосом — він допоможе іншим.</p></div>
+      <div class="onb-row"><span>🔥</span><p>Коли твій кейс спрацює в колеги — отримаєш сповіщення.</p></div>
+      <button class="take" onclick="dismissOnboarding()">Зрозуміло, почати</button>
+    </div>
+  </div>
+
   <!-- TOP BAR -->
   <div class="topbar">
     <div class="store">
@@ -130,7 +142,9 @@
       <div class="skill"><span>IT Service</span><em id="st-cat-it">0</em></div>
       <div class="skill"><span>Happy Service</span><em id="st-cat-happy" style="color:var(--warn)">0</em></div>
 
-      <p style="font-size:12px;color:var(--muted);text-align:center;margin-top:22px;line-height:1.5">
+      <div class="more" onclick="showOnboarding()">❓ Як це працює</div>
+
+      <p style="font-size:12px;color:var(--muted);text-align:center;margin-top:18px;line-height:1.5">
         Рейтинг належить кейсам, а не людям.<br>Ти стаєш помітним через якість своїх кейсів.
       </p>
     </div>

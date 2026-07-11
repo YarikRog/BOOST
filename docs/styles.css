@@ -166,6 +166,17 @@ textarea{width:100%;border:1px solid var(--line);border-radius:13px;padding:12px
 .ribbon{position:absolute;top:10px;left:-34px;transform:rotate(-45deg);background:#f59e0b;color:#000;
   font-size:10px;font-weight:800;padding:3px 40px;z-index:40;letter-spacing:.5px}
 
+/* onboarding overlay */
+.onb{position:absolute;inset:0;background:rgba(8,15,30,.6);display:flex;align-items:center;
+  justify-content:center;z-index:45;padding:22px}
+.onb-card{background:var(--card);border-radius:22px;padding:22px 20px;width:100%;max-width:360px;
+  box-shadow:0 20px 60px rgba(2,8,23,.5)}
+.onb-card h2{margin:0 0 16px;font-size:20px}
+.onb-row{display:flex;gap:12px;align-items:flex-start;margin-bottom:14px}
+.onb-row span{font-size:22px;line-height:1.2}
+.onb-row p{margin:0;font-size:14px;line-height:1.4;color:var(--ink)}
+.onb-row b{color:var(--ink)}
+
 /* splash screen */
 .splash{position:absolute;inset:0;background:linear-gradient(135deg,#2f9e2f,#1e7e1e);
   display:flex;align-items:center;justify-content:center;z-index:50;animation:splashFade .8s ease-out .4s forwards;opacity:1}

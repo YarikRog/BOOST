@@ -466,5 +466,15 @@ applyTheme(saved||(pref?'dark':'light'));
   });
 });
 
-// Hide splash after animation
-setTimeout(()=>{ const s=document.getElementById('splash'); if(s) s.style.display='none'; },1200);
+// Onboarding (first launch, re-openable from profile)
+function showOnboarding(){ document.getElementById('onb').classList.remove('hidden'); }
+function dismissOnboarding(){
+  document.getElementById('onb').classList.add('hidden');
+  localStorage.setItem('boost_onboarded','1');
+}
+
+// Hide splash after animation, then show onboarding on first launch.
+setTimeout(()=>{
+  const s=document.getElementById('splash'); if(s) s.style.display='none';
+  if(!localStorage.getItem('boost_onboarded')) showOnboarding();
+},1250);

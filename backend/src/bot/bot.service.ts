@@ -92,6 +92,39 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     }
   }
 
+  /** Notify a case's author that it just worked for a colleague (engagement loop). */
+  async notifyAuthorSuccess(lifehackId: string): Promise<void> {
+    if (!this.bot) return;
+    try {
+      const { data: lh } = await this.supabase.db
+        .from('lifehacks')
+        .select('author_id, title')
+        .eq('id', lifehackId)
+        .maybeSingle();
+      if (!lh) return;
+      const author = lh as { author_id: string; title: string };
+      const { data: u } = await this.supabase.db
+        .from('users')
+        .select('telegram_id')
+        .eq('id', author.author_id)
+        .maybeSingle();
+      const tg = (u as { telegram_id: number } | null)?.telegram_id;
+      if (!tg) return;
+      const { count } = await this.supabase.db
+        .from('work_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('lifehack_id', lifehackId)
+        .eq('status', 'success');
+      await this.bot.api.sendMessage(
+        tg,
+        `🔥 Твій кейс «${author.title}» щойно спрацював у колеги! ` +
+          `Уже ${count ?? 1} підтверджень. Так тримати 💪`,
+      );
+    } catch (e) {
+      this.logger.error(`notifyAuthorSuccess failed: ${(e as Error).message}`);
+    }
+  }
+
   /** Send a voice message to a user by telegram id (used to forward voice cases). */
   async sendVoice(telegramId: number, fileId: string, caption?: string): Promise<void> {
     if (!this.bot) return;
@@ -229,6 +262,9 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       .eq('id', (data as { lifehack_id: string }).lifehack_id)
       .maybeSingle();
     if (lh) await this.redis.invalidateFeed((lh as { category_id: string }).category_id);
+    if (outcome === 'success') {
+      await this.notifyAuthorSuccess((data as { lifehack_id: string }).lifehack_id);
+    }
 
     const labels: Record<string, string> = {
       success: '🔥 Зараховано як успіх! Дякую.',

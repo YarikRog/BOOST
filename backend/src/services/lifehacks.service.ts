@@ -132,6 +132,10 @@ export class LifehacksService {
     lifehackId: string,
     type: 'like' | 'dislike',
   ): Promise<{ type: 'like' | 'dislike' | null }> {
+    // Anti-spam: cap reactions per user per minute.
+    if (await this.redis.hitReactionLimit(user.id, 20)) {
+      throw new BadRequestException('Занадто багато реакцій. Спробуй за хвилину.');
+    }
     const { data: lh } = await this.supabase.db
       .from('lifehacks')
       .select('author_id, author_store_id, category_id')
