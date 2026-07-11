@@ -67,7 +67,7 @@ function normLive(x, catName){
     id:x.id, author_id:x.author_id, cat:catName, tier:tierOf(x.tried||0), title:x.title,
     sub:x.product_type||'', rate:x.rate||0, tried:x.tried||0, ok:x.ok||0,
     author:x.author||'Продавець', sit:x.sit||'', do:x.do||'', why:x.why||'', has_voice:!!x.has_voice,
-    likes:x.likes||0, dislikes:x.dislikes||0
+    voice_url:x.voice_url||null, likes:x.likes||0, dislikes:x.dislikes||0
   };
 }
 
@@ -206,7 +206,8 @@ function openDetail(i){
   // Voice player
   const audio=document.getElementById('d-audio');
   if(LIVE && d.has_voice && d.id){
-    audio.src = API + '/lifehacks/' + encodeURIComponent(d.id) + '/voice';
+    // Prefer our own storage copy; fall back to streaming via the backend.
+    audio.src = d.voice_url || (API + '/lifehacks/' + encodeURIComponent(d.id) + '/voice');
     audio.classList.remove('hidden');
   } else {
     audio.classList.add('hidden'); audio.removeAttribute('src');

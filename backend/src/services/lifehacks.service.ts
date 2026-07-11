@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'crypto';
 import { SupabaseService } from '../integrations/supabase.client';
 import { RedisService } from '../integrations/redis.client';
 import { ScoringService } from './scoring.service';
@@ -52,8 +53,6 @@ export class LifehacksService {
    * download). Used by GET /lifehacks/:id/voice so the WebApp can play it.
    */
   async voiceBuffer(lifehackId: string): Promise<{ buffer: Buffer; contentType: string } | null> {
-    const token = this.config.get<string>('TELEGRAM_BOT_TOKEN');
-    if (!token) return null;
     const { data } = await this.supabase.db
       .from('lifehacks')
       .select('content_json')
@@ -61,15 +60,47 @@ export class LifehacksService {
       .maybeSingle();
     const fileId = (data?.content_json as { voice_file_id?: string } | undefined)?.voice_file_id;
     if (!fileId) return null;
+    const buffer = await this.downloadTelegramFile(fileId);
+    return buffer ? { buffer, contentType: 'audio/ogg' } : null;
+  }
 
-    const gf = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`);
-    const gfJson = (await gf.json()) as { ok: boolean; result?: { file_path?: string } };
-    const filePath = gfJson.result?.file_path;
-    if (!filePath) return null;
+  /** Download a Telegram file by file_id (getFile → download). */
+  private async downloadTelegramFile(fileId: string): Promise<Buffer | null> {
+    const token = this.config.get<string>('TELEGRAM_BOT_TOKEN');
+    if (!token) return null;
+    try {
+      const gf = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`);
+      const gfJson = (await gf.json()) as { ok: boolean; result?: { file_path?: string } };
+      const filePath = gfJson.result?.file_path;
+      if (!filePath) return null;
+      const dl = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
+      return Buffer.from(await dl.arrayBuffer());
+    } catch {
+      return null;
+    }
+  }
 
-    const dl = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
-    const buffer = Buffer.from(await dl.arrayBuffer());
-    return { buffer, contentType: 'audio/ogg' };
+  /**
+   * Copy a Telegram voice note into Supabase Storage and return a public URL.
+   * Best-effort: returns null on failure, and we fall back to file_id streaming.
+   */
+  private async uploadVoice(fileId: string): Promise<string | null> {
+    const buffer = await this.downloadTelegramFile(fileId);
+    if (!buffer) return null;
+    const bucket = 'voice-cases';
+    try {
+      // Ensure the bucket exists (ignored if it already does).
+      await this.supabase.db.storage.createBucket(bucket, { public: true });
+    } catch {
+      /* already exists */
+    }
+    const path = `${randomUUID()}.ogg`;
+    const { error } = await this.supabase.db.storage
+      .from(bucket)
+      .upload(path, buffer, { contentType: 'audio/ogg', upsert: false });
+    if (error) return null;
+    const { data } = this.supabase.db.storage.from(bucket).getPublicUrl(path);
+    return data.publicUrl ?? null;
   }
 
   /**
@@ -191,6 +222,14 @@ export class LifehacksService {
     if (!cat) throw new BadRequestException('Невідома категорія.');
     const categoryId = (cat as { id: string }).id;
 
+    // Voice case: copy the audio into our own storage so it survives regardless
+    // of the Telegram file_id lifecycle. Keep file_id as a fallback.
+    const content = { ...(input.content ?? {}) } as Record<string, unknown>;
+    if (content.voice_file_id) {
+      const url = await this.uploadVoice(content.voice_file_id as string);
+      if (url) content.voice_url = url;
+    }
+
     const nowIso = new Date().toISOString();
     const { data, error } = await this.supabase.db
       .from('lifehacks')
@@ -200,7 +239,7 @@ export class LifehacksService {
         category_id: categoryId,
         product_type: input.productType ?? '',
         title,
-        content_json: input.content ?? {},
+        content_json: content,
         status: LifehackStatus.published,
         published_at: nowIso,
       })
@@ -294,7 +333,8 @@ export class LifehacksService {
         rate: tried > 0 ? Math.round((ok / tried) * 100) : 0,
         likes: re.likes,
         dislikes: re.dislikes,
-        has_voice: !!content.voice_file_id,
+        has_voice: !!(content.voice_file_id || content.voice_url),
+        voice_url: content.voice_url ?? null,
         sit: content.sit ?? '',
         do: content.do ?? '',
         why: content.why ?? '',
