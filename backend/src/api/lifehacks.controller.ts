@@ -15,6 +15,10 @@ interface VoiceIntentBody {
   productType?: string;
 }
 
+interface ReactBody {
+  type: 'like' | 'dislike';
+}
+
 @Controller('lifehacks')
 export class LifehacksController {
   constructor(private readonly lifehacks: LifehacksService) {}
@@ -48,6 +52,20 @@ export class LifehacksController {
     const isAdmin =
       req.appUser.role === 'MEGA_ADMIN' || req.appUser.role === 'REGIONAL_IT_LEAD';
     return this.lifehacks.remove(req.appUser.id, isAdmin, id);
+  }
+
+  // POST /lifehacks/:id/react — toggle like/dislike.
+  @Post(':id/react')
+  @UseGuards(TelegramInitDataGuard)
+  react(@Param('id') id: string, @Body() body: ReactBody, @Req() req: AuthedRequest) {
+    return this.lifehacks.react(req.appUser, id, body.type);
+  }
+
+  // GET /lifehacks/my-reactions — the current user's reactions.
+  @Get('my-reactions')
+  @UseGuards(TelegramInitDataGuard)
+  myReactions(@Req() req: AuthedRequest) {
+    return this.lifehacks.myReactions(req.appUser.id);
   }
 
   // GET /lifehacks/me/stats — real profile stats for the current user.

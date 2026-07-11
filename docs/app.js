@@ -60,12 +60,37 @@ function api(path, opts){
 function tierOf(tried){ return tried>=10 ? 'TOP' : (tried>0 ? 'GROWING' : 'NEW'); }
 function isMine(item){ return LIVE && me && item && item.author_id === me.id; }
 
+let myReacts = {}; // lifehack_id → 'like' | 'dislike'
+
 function normLive(x, catName){
   return {
     id:x.id, author_id:x.author_id, cat:catName, tier:tierOf(x.tried||0), title:x.title,
     sub:x.product_type||'', rate:x.rate||0, tried:x.tried||0, ok:x.ok||0,
-    author:x.author||'Продавець', sit:x.sit||'', do:x.do||'', why:x.why||'', has_voice:!!x.has_voice
+    author:x.author||'Продавець', sit:x.sit||'', do:x.do||'', why:x.why||'', has_voice:!!x.has_voice,
+    likes:x.likes||0, dislikes:x.dislikes||0
   };
+}
+
+function loadMyReactions(){
+  return api('/lifehacks/my-reactions').then(list => {
+    myReacts = {};
+    (list||[]).forEach(r => { myReacts[r.lifehack_id] = r.type; });
+  }).catch(()=>{});
+}
+
+// Toggle a like/dislike on the backend, then reflect it on the two buttons.
+function reactTo(ev, id, type, btn){
+  if(ev) ev.stopPropagation();
+  if(!LIVE){ tog(btn); return; }
+  api('/lifehacks/'+encodeURIComponent(id)+'/react', {
+    method:'POST', headers:{ 'content-type':'application/json' }, body: JSON.stringify({ type })
+  }).then(res => {
+    myReacts[id] = res.type; // 'like' | 'dislike' | null
+    const wrap = btn.parentElement;
+    const [likeBtn, disBtn] = wrap.querySelectorAll('button');
+    likeBtn.classList.toggle('on', res.type==='like');
+    disBtn.classList.toggle('on', res.type==='dislike');
+  }).catch(e => toast('⚠️ '+e.message.slice(0,50)));
 }
 
 function loadMe(){
@@ -137,8 +162,8 @@ function renderFeed(){
       <div class="foot">
         <span class="who">${d.author}</span>
         <div class="react">
-          <button onclick="event.stopPropagation();tog(this)">👍</button>
-          <button onclick="event.stopPropagation();tog(this)">👎</button>
+          <button class="${myReacts[d.id]==='like'?'on':''}" onclick="reactTo(event,'${d.id}','like',this)">👍 ${d.likes||''}</button>
+          <button class="${myReacts[d.id]==='dislike'?'on':''}" onclick="reactTo(event,'${d.id}','dislike',this)">👎 ${d.dislikes||''}</button>
         </div>
       </div>`;
     return `
@@ -196,6 +221,16 @@ function openDetail(i){
   document.getElementById('d-delete').classList.toggle('hidden', !canDelete);
   const t=document.getElementById('d-take'); t.className='take'; t.textContent='📌 Беру в роботу';
   if(mine) t.classList.add('hidden');
+  // Wire reaction buttons to the current case.
+  const likeBtn=document.getElementById('d-like'), disBtn=document.getElementById('d-dislike');
+  if(likeBtn && disBtn){
+    likeBtn.classList.toggle('on', myReacts[d.id]==='like');
+    disBtn.classList.toggle('on', myReacts[d.id]==='dislike');
+    likeBtn.textContent = '👍 ' + (d.likes||'');
+    disBtn.textContent = '👎 ' + (d.dislikes||'');
+    likeBtn.onclick = (e)=>reactTo(e, d.id, 'like', likeBtn);
+    disBtn.onclick = (e)=>reactTo(e, d.id, 'dislike', disBtn);
+  }
   show('detail');
 }
 
@@ -395,8 +430,8 @@ if(LIVE){
   // In live mode the prototype scaffolding is off.
   const ribbon=document.querySelector('.ribbon'); if(ribbon) ribbon.style.display='none';
   const hint=document.getElementById('hint'); if(hint) hint.style.display='none';
-  // Feed is the main content — one request, shown immediately.
-  loadFeed('it');
+  // Load the viewer's reactions first (so the feed can highlight), then the feed.
+  loadMyReactions().finally(()=>loadFeed('it'));
   // Everything else loads in parallel and updates the UI when ready.
   loadMe().then(loadStats).catch(()=>{});
   loadActive().catch(()=>{});

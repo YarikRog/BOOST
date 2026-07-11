@@ -91,6 +91,70 @@ export class LifehacksService {
     return { ok: true };
   }
 
+  /**
+   * Toggle a like/dislike on a lifehack. Cross-store weight is frozen at like
+   * time (cross=1.0, same-store=0.25 — derived at scoring). You cannot react to
+   * your own case. Returns the resulting reaction state (or null if toggled off).
+   */
+  async react(
+    user: UserRow,
+    lifehackId: string,
+    type: 'like' | 'dislike',
+  ): Promise<{ type: 'like' | 'dislike' | null }> {
+    const { data: lh } = await this.supabase.db
+      .from('lifehacks')
+      .select('author_id, author_store_id, category_id')
+      .eq('id', lifehackId)
+      .maybeSingle();
+    if (!lh) throw new BadRequestException('Кейс не знайдено.');
+    const row = lh as { author_id: string; author_store_id: string | null; category_id: string };
+    if (row.author_id === user.id) {
+      throw new BadRequestException('Не можна реагувати на власний кейс.');
+    }
+
+    const { data: existing } = await this.supabase.db
+      .from('reactions')
+      .select('id, type')
+      .eq('user_id', user.id)
+      .eq('lifehack_id', lifehackId)
+      .maybeSingle();
+
+    let result: 'like' | 'dislike' | null;
+    if (existing) {
+      const ex = existing as { id: string; type: 'like' | 'dislike' };
+      if (ex.type === type) {
+        await this.supabase.db.from('reactions').delete().eq('id', ex.id);
+        result = null; // tapped the same reaction again → remove it
+      } else {
+        await this.supabase.db.from('reactions').update({ type }).eq('id', ex.id);
+        result = type;
+      }
+    } else {
+      const isCross = row.author_store_id !== user.store_id; // null store (admin) counts as cross
+      await this.supabase.db.from('reactions').insert({
+        user_id: user.id,
+        lifehack_id: lifehackId,
+        type,
+        author_store_id_snap: row.author_store_id,
+        user_store_id_snap: user.store_id,
+        is_cross_store: isCross,
+      });
+      result = type;
+    }
+
+    await this.redis.invalidateFeed(row.category_id);
+    return { type: result };
+  }
+
+  /** The current user's reactions (for the WebApp to highlight buttons). */
+  async myReactions(userId: string): Promise<{ lifehack_id: string; type: string }[]> {
+    const { data } = await this.supabase.db
+      .from('reactions')
+      .select('lifehack_id, type')
+      .eq('user_id', userId);
+    return (data as { lifehack_id: string; type: string }[]) ?? [];
+  }
+
   /** Delete a lifehack (author or admin). Cleans dependent rows first. */
   async remove(userId: string, isAdmin: boolean, lifehackId: string): Promise<{ ok: true }> {
     const { data: lh } = await this.supabase.db
@@ -183,10 +247,19 @@ export class LifehacksService {
     const authorIds = [...new Set(rows.map((r) => r.author_id as string))];
     const lifehackIds = rows.map((r) => r.id as string);
 
-    const [{ data: users }, { data: wis }] = await Promise.all([
+    const [{ data: users }, { data: wis }, { data: reacts }] = await Promise.all([
       this.supabase.db.from('users').select('id, name, status').in('id', authorIds),
       this.supabase.db.from('work_items').select('lifehack_id, status').in('lifehack_id', lifehackIds),
+      this.supabase.db.from('reactions').select('lifehack_id, type').in('lifehack_id', lifehackIds),
     ]);
+
+    const reByLh = new Map<string, { likes: number; dislikes: number }>();
+    (reacts ?? []).forEach((r) => {
+      const e = reByLh.get(r.lifehack_id as string) ?? { likes: 0, dislikes: 0 };
+      if (r.type === 'like') e.likes++;
+      else e.dislikes++;
+      reByLh.set(r.lifehack_id as string, e);
+    });
 
     const userById = new Map(
       (users ?? []).map((u) => [u.id as string, u as { name: string | null; status: string }]),
@@ -209,6 +282,7 @@ export class LifehacksService {
       const tried = c.success + c.partial + c.fail;
       const ok = c.success;
       const content = (r.content_json ?? {}) as Record<string, unknown>;
+      const re = reByLh.get(r.id as string) ?? { likes: 0, dislikes: 0 };
       return {
         id: r.id,
         title: r.title,
@@ -218,6 +292,8 @@ export class LifehacksService {
         tried,
         ok,
         rate: tried > 0 ? Math.round((ok / tried) * 100) : 0,
+        likes: re.likes,
+        dislikes: re.dislikes,
         has_voice: !!content.voice_file_id,
         sit: content.sit ?? '',
         do: content.do ?? '',
@@ -281,11 +357,23 @@ export class LifehacksService {
     const statuses = (data ?? []).map((r) => r.status as WorkItemStatus);
     const counts = ScoringService.tallyOutcomes(statuses);
 
-    // Reaction weights would be folded in here from the reactions table.
+    // Fold reaction weights from the frozen cross-store snapshot.
+    const { data: reacts } = await this.supabase.db
+      .from('reactions')
+      .select('type, is_cross_store')
+      .eq('lifehack_id', lifehackId);
+    let weightedLikes = 0;
+    let weightedDislikes = 0;
+    (reacts ?? []).forEach((r) => {
+      const w = ScoringService.reactionWeight(r.is_cross_store as boolean);
+      if (r.type === 'like') weightedLikes += w;
+      else weightedDislikes += w;
+    });
+
     return this.scoring.compute({
       ...counts,
-      weightedLikes: 0,
-      weightedDislikes: 0,
+      weightedLikes,
+      weightedDislikes,
       daysSinceLastConfirmation: null,
     });
   }
