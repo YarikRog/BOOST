@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { SupabaseService } from '../integrations/supabase.client';
+import { BotService } from '../bot/bot.service';
 import { WorkItemStatus } from '../common/enums';
 
 /**
@@ -12,7 +13,10 @@ import { WorkItemStatus } from '../common/enums';
 export class ReminderWorker {
   private readonly logger = new Logger(ReminderWorker.name);
 
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(
+    private readonly supabase: SupabaseService,
+    private readonly bot: BotService,
+  ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async sweep(): Promise<void> {
@@ -34,13 +38,35 @@ export class ReminderWorker {
 
     for (const wi of data) {
       try {
-        // TODO: enqueue the bot check prompt (batched per user — PRODUCT_LOGIC §4).
-        await this.supabase.db
+        // Claim the row first so a concurrent sweep can't double-send.
+        const { data: claimed } = await this.supabase.db
           .from('work_items')
           .update({ check_sent: true })
           .eq('id', wi.id)
-          .eq('check_sent', false); // guard against a concurrent sweep
-        this.logger.debug(`Check prompt due for work_item ${wi.id}`);
+          .eq('check_sent', false)
+          .select('id')
+          .maybeSingle();
+        if (!claimed) continue; // another sweep took it
+
+        // Look up the taker's telegram id + the lifehack title, then prompt.
+        const [{ data: user }, { data: lh }] = await Promise.all([
+          this.supabase.db
+            .from('users')
+            .select('telegram_id')
+            .eq('id', wi.user_id as string)
+            .maybeSingle(),
+          this.supabase.db
+            .from('lifehacks')
+            .select('title')
+            .eq('id', wi.lifehack_id as string)
+            .maybeSingle(),
+        ]);
+        const telegramId = (user as { telegram_id: number } | null)?.telegram_id;
+        const title = (lh as { title: string } | null)?.title ?? 'кейс';
+        if (telegramId) {
+          await this.bot.sendResultPrompt(telegramId, wi.id as string, title);
+        }
+        this.logger.debug(`Check prompt sent for work_item ${wi.id}`);
       } catch (e) {
         this.logger.error(`Reminder for ${wi.id} failed: ${(e as Error).message}`);
       }

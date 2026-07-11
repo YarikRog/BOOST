@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Bot, InlineKeyboard, Keyboard, Context } from 'grammy';
 import { RedisService } from '../integrations/redis.client';
+import { SupabaseService } from '../integrations/supabase.client';
 import { InvitesService } from '../services/invites.service';
 import { UsersService } from '../services/users.service';
 import { LifehacksService } from '../services/lifehacks.service';
@@ -63,11 +64,33 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
   constructor(
     private readonly config: ConfigService,
     private readonly redis: RedisService,
+    private readonly supabase: SupabaseService,
     private readonly invites: InvitesService,
     private readonly users: UsersService,
     private readonly lifehacks: LifehacksService,
     private readonly categories: CategoriesService,
   ) {}
+
+  /** 7-day check: ask the taker if the case worked, with resolve buttons. */
+  async sendResultPrompt(telegramId: number, workItemId: string, title: string): Promise<void> {
+    if (!this.bot) return;
+    const kb = new InlineKeyboard()
+      .text('🔥 Так, продав', `wres:${workItemId}:success`)
+      .row()
+      .text('😐 Частково', `wres:${workItemId}:partial`)
+      .text('❌ Ні', `wres:${workItemId}:fail`)
+      .row()
+      .text('⏭ Не пробував', `wres:${workItemId}:not_tried`);
+    try {
+      await this.bot.api.sendMessage(
+        telegramId,
+        `⏰ Ти брав кейс «${title}» у роботу 7 днів тому. Спрацювало?`,
+        { reply_markup: kb },
+      );
+    } catch (e) {
+      this.logger.error(`sendResultPrompt to ${telegramId} failed: ${(e as Error).message}`);
+    }
+  }
 
   /** Send a voice message to a user by telegram id (used to forward voice cases). */
   async sendVoice(telegramId: number, fileId: string, caption?: string): Promise<void> {
@@ -142,6 +165,9 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     bot.callbackQuery(/^ns:(confirm|edit)$/, (ctx) => this.onNewStoreConfirm(ctx));
     bot.callbackQuery(/^vpub:(confirm|edit|cancel)$/, (ctx) => this.onVoicePublish(ctx));
     bot.callbackQuery(/^cancelflow$/, (ctx) => this.onCancelFlow(ctx));
+    bot.callbackQuery(/^wres:([0-9a-f-]+):(success|partial|fail|not_tried)$/, (ctx) =>
+      this.onResolveWork(ctx),
+    );
     bot.on('message:text', (ctx) => this.onText(ctx));
     bot.catch((err) => this.logger.error(`Bot error: ${err.message}`));
   }
@@ -169,6 +195,48 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       return;
     }
     await this.createStoreAndReply(ctx, storeName);
+  }
+
+  /** Resolve buttons on the 7-day check prompt → write the outcome. */
+  private async onResolveWork(ctx: Context): Promise<void> {
+    const tgId = ctx.from?.id;
+    if (!tgId) return;
+    await ctx.answerCallbackQuery();
+    const m = ctx.match as RegExpMatchArray;
+    const workItemId = m[1];
+    const outcome = m[2];
+
+    const user = await this.users.findByTelegramId(tgId);
+    if (!user) return;
+
+    const { data } = await this.supabase.db
+      .from('work_items')
+      .update({ status: outcome, resolved_at: new Date().toISOString() })
+      .eq('id', workItemId)
+      .eq('user_id', user.id)
+      .eq('status', 'in_work')
+      .select('id, lifehack_id')
+      .maybeSingle();
+
+    if (!data) {
+      await ctx.reply('Цей кейс уже підтверджено або не активний.');
+      return;
+    }
+    // A real outcome changes the score → drop the category feed cache.
+    const { data: lh } = await this.supabase.db
+      .from('lifehacks')
+      .select('category_id')
+      .eq('id', (data as { lifehack_id: string }).lifehack_id)
+      .maybeSingle();
+    if (lh) await this.redis.invalidateFeed((lh as { category_id: string }).category_id);
+
+    const labels: Record<string, string> = {
+      success: '🔥 Зараховано як успіх! Дякую.',
+      partial: 'Дякуємо за відповідь.',
+      fail: 'Дякуємо за відповідь.',
+      not_tried: 'Не враховується в рейтинг. Дякую.',
+    };
+    await ctx.reply(labels[outcome] ?? 'Дякуємо.');
   }
 
   /** `/help` — list available commands (admin sees management ones). */
