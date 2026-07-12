@@ -158,8 +158,8 @@ textarea{width:100%;border:1px solid var(--line);border-radius:13px;padding:12px
 .demo-hint b{color:#7dd3fc}
 
 .toast{position:absolute;bottom:96px;left:50%;transform:translateX(-50%) translateY(20px);
-  background:var(--ink);color:#fff;padding:10px 18px;border-radius:30px;font-size:13px;opacity:0;
-  transition:.3s;z-index:25;white-space:nowrap}
+  background:#334155;color:#fff;padding:10px 18px;border-radius:30px;font-size:13px;opacity:0;
+  transition:.3s;z-index:35;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.35)}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
 .hidden{display:none}
