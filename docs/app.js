@@ -466,10 +466,15 @@ applyTheme(saved||(pref?'dark':'light'));
   });
 });
 
-// Onboarding (first launch, re-openable from profile)
-function showOnboarding(){ document.getElementById('onb').classList.remove('hidden'); }
+// Onboarding (first launch, re-openable from profile).
+// Force display via inline style too, so a stale cached CSS can't keep it stuck.
+function showOnboarding(){
+  const o=document.getElementById('onb');
+  o.style.display='flex'; o.classList.remove('hidden');
+}
 function dismissOnboarding(){
-  document.getElementById('onb').classList.add('hidden');
+  const o=document.getElementById('onb');
+  o.style.display='none'; o.classList.add('hidden');
   localStorage.setItem('boost_onboarded','1');
 }
 
