@@ -130,12 +130,32 @@ function loadCats(){
 }
 
 const CAT_NAME = { it_service:'IT Service', happy_service:'Happy Service' };
-function loadFeed(tabKey){
+const feedCache = {}; // tabKey -> normalized array (instant tab switches)
+
+function fetchFeed(tabKey){
   const slug = SLUG_FOR[tabKey];
-  api('/lifehacks/feed?categorySlug=' + encodeURIComponent(slug))
-    .then(rows => { curList = (rows||[]).map(r => normLive(r, CAT_NAME[slug]||'')); renderFeed(); })
-    .catch(e => { curList=[]; renderFeed(); toast('⚠️ '+e.message.slice(0,60)); });
+  return api('/lifehacks/feed?categorySlug=' + encodeURIComponent(slug))
+    .then(rows => {
+      const list = (rows||[]).map(r => normLive(r, CAT_NAME[slug]||''));
+      feedCache[tabKey] = list;
+      return list;
+    });
 }
+
+// Show a tab instantly from cache (if any), then refresh in the background.
+function loadFeed(tabKey){
+  if(feedCache[tabKey]){
+    curList = feedCache[tabKey]; renderFeed();
+    fetchFeed(tabKey).then(list => { if(curCat===tabKey){ curList=list; renderFeed(); } }).catch(()=>{});
+  } else {
+    fetchFeed(tabKey)
+      .then(list => { if(curCat===tabKey){ curList=list; renderFeed(); } })
+      .catch(e => { if(curCat===tabKey){ curList=[]; renderFeed(); } toast('⚠️ '+e.message.slice(0,60)); });
+  }
+}
+
+// Warm a tab into cache without rendering (called for the other tab on start).
+function prefetchFeed(tabKey){ fetchFeed(tabKey).catch(()=>{}); }
 
 // ===== Feed rendering =====
 function renderFeed(){
@@ -239,7 +259,7 @@ function deleteCase(){
   if(!curItem || !curItem.id) return;
   const id = curItem.id;
   const doDel = ()=> api('/lifehacks/'+encodeURIComponent(id)+'/delete', { method:'POST' })
-    .then(()=>{ toast('Кейс видалено 🗑'); loadStats(); loadFeed(curCat); setTimeout(()=>show('feed'),500); })
+    .then(()=>{ toast('Кейс видалено 🗑'); loadStats(); delete feedCache[curCat]; loadFeed(curCat); setTimeout(()=>show('feed'),500); })
     .catch(e => toast('⚠️ '+e.message.slice(0,60)));
   if(tg && tg.showConfirm){ tg.showConfirm('Видалити цей кейс?', ok=>{ if(ok) doDel(); }); }
   else if(confirm('Видалити цей кейс?')){ doDel(); }
@@ -389,6 +409,7 @@ function publish(){
     document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
     const tabEls = document.querySelectorAll('.tab');
     (tabKey==='it' ? tabEls[0] : tabEls[1]).classList.add('on');
+    delete feedCache[tabKey]; // new case published → refetch fresh
     loadFeed(tabKey);
     setTimeout(()=>show('feed'),700);
   }).catch(e => toast('⚠️ '+e.message.slice(0,60)));
@@ -432,7 +453,8 @@ if(LIVE){
   const ribbon=document.querySelector('.ribbon'); if(ribbon) ribbon.style.display='none';
   const hint=document.getElementById('hint'); if(hint) hint.style.display='none';
   // Load the viewer's reactions first (so the feed can highlight), then the feed.
-  loadMyReactions().finally(()=>loadFeed('it'));
+  // Warm the other tab in the background so switching is instant.
+  loadMyReactions().finally(()=>{ loadFeed('it'); prefetchFeed('happy'); });
   // Everything else loads in parallel and updates the UI when ready.
   loadMe().then(loadStats).catch(()=>{});
   loadActive().catch(()=>{});
