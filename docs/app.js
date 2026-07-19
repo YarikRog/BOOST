@@ -143,14 +143,14 @@ function fetchFeed(tabKey){
 }
 
 // Show a tab instantly from cache (if any), then refresh in the background.
-function loadFeed(tabKey){
+function loadFeed(tabKey, dir){
   if(feedCache[tabKey]){
-    curList = feedCache[tabKey]; renderFeed();
+    curList = feedCache[tabKey]; renderFeed(dir);
     fetchFeed(tabKey).then(list => { if(curCat===tabKey){ curList=list; renderFeed(); } }).catch(()=>{});
   } else {
     fetchFeed(tabKey)
-      .then(list => { if(curCat===tabKey){ curList=list; renderFeed(); } })
-      .catch(e => { if(curCat===tabKey){ curList=[]; renderFeed(); } toast('⚠️ '+e.message.slice(0,60)); });
+      .then(list => { if(curCat===tabKey){ curList=list; renderFeed(dir); } })
+      .catch(e => { if(curCat===tabKey){ curList=[]; renderFeed(dir); } toast('⚠️ '+e.message.slice(0,60)); });
   }
 }
 
@@ -158,11 +158,20 @@ function loadFeed(tabKey){
 function prefetchFeed(tabKey){ fetchFeed(tabKey).catch(()=>{}); }
 
 // ===== Feed rendering =====
-function renderFeed(){
+function playSlide(dir){
+  if(!dir) return;
+  const el=document.getElementById('feed-list');
+  el.classList.remove('slide-r','slide-l');
+  void el.offsetWidth; // restart animation
+  el.classList.add(dir==='r' ? 'slide-r' : 'slide-l');
+}
+
+function renderFeed(dir){
   const list = curList || [];
   if(!list.length){
     document.getElementById('feed-list').innerHTML =
       '<div class="card" style="cursor:default"><div class="sub">Поки що немає кейсів у цій категорії. Додай перший через «+».</div></div>';
+    playSlide(dir);
     return;
   }
   document.getElementById('feed-list').innerHTML = list.map((d,i)=>{
@@ -195,12 +204,16 @@ function renderFeed(){
       ${foot}
     </div>`;
   }).join('');
+  playSlide(dir);
 }
 
+const TAB_ORDER = ['it','happy'];
 function switchCat(el,c){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
-  el.classList.add('on'); curCat=c;
-  if(LIVE) loadFeed(c); else { curList=DATA[c]; renderFeed(); }
+  el.classList.add('on');
+  const dir = TAB_ORDER.indexOf(c) > TAB_ORDER.indexOf(curCat) ? 'r' : 'l';
+  curCat=c;
+  if(LIVE) loadFeed(c, dir); else { curList=DATA[c]; renderFeed(dir); }
 }
 
 function openDetail(i){
