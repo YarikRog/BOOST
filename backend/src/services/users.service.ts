@@ -296,14 +296,24 @@ export class UsersService {
     return true;
   }
 
-  /** List all stores (admin cleanup / overview). */
-  async listStores(): Promise<Array<{ id: string; name: string }>> {
-    const { data, error } = await this.supabase.db
+  /** List all stores with user counts (admin cleanup / overview). */
+  async listStores(): Promise<Array<{ id: string; name: string; userCount: number }>> {
+    const { data: stores, error } = await this.supabase.db
       .from('stores')
       .select('id, name')
       .order('created_at', { ascending: true });
     if (error) throw error;
-    return (data ?? []) as Array<{ id: string; name: string }>;
+
+    const result = [];
+    for (const store of stores ?? []) {
+      const { count, error: cntErr } = await this.supabase.db
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .eq('store_id', store.id);
+      if (cntErr) throw cntErr;
+      result.push({ id: store.id as string, name: store.name as string, userCount: count ?? 0 });
+    }
+    return result;
   }
 
   /**

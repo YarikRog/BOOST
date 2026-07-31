@@ -474,7 +474,8 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
 
     const kb = new InlineKeyboard();
     for (const s of stores) {
-      kb.text(`🗑 ${s.name} (${s.id.slice(0, 8)})`, `delstore:${s.id}`).row();
+      const label = s.userCount === 0 ? `🗑 ${s.name} (0 людей)` : `${s.name} (${s.userCount} 👥)`;
+      kb.text(label, `delstore:${s.id}`).row();
     }
     await ctx.reply(`Магазини (${stores.length}). Тисни, щоб видалити порожній:`, { reply_markup: kb });
   }
