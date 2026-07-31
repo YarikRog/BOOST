@@ -71,7 +71,6 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly categories: CategoriesService,
   ) {}
 
-  /** 7-day check: ask the taker if the case worked, with resolve buttons. */
   /** Delete a bot message after 5 minutes (keeps command chatter from piling up). */
   private scheduleAutoDelete(chatId: number, messageId: number): void {
     setTimeout(() => {
@@ -80,6 +79,29 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       });
     }, 5 * 60 * 1000);
   }
+
+  /**
+   * Send a critical-error alert straight to the admin's Telegram, bypassing
+   * everything else (DB, cache, business logic) — this is the "the app is on
+   * fire" channel, so it must work even if the DB is down. Targets
+   * BOOTSTRAP_ADMIN_TELEGRAM_ID directly rather than querying MEGA_ADMIN from
+   * the database, for exactly that reason. Never throws.
+   */
+  async alertAdmin(source: string, message: string): Promise<void> {
+    if (!this.bot) return;
+    const adminId = this.config.get<string>('BOOTSTRAP_ADMIN_TELEGRAM_ID');
+    if (!adminId) return;
+    try {
+      await this.bot.api.sendMessage(
+        Number(adminId),
+        `🚨 Помилка на бекенді (${source})\n\n${message.slice(0, 3500)}`,
+      );
+    } catch (e) {
+      this.logger.error(`alertAdmin failed to notify: ${(e as Error).message}`);
+    }
+  }
+
+  /** 7-day check: ask the taker if the case worked, with resolve buttons. */
 
   async sendResultPrompt(telegramId: number, workItemId: string, title: string): Promise<void> {
     if (!this.bot) return;
@@ -260,7 +282,10 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       this.onResolveWork(ctx),
     );
     bot.on('message:text', (ctx) => this.onText(ctx));
-    bot.catch((err) => this.logger.error(`Bot error: ${err.message}`));
+    bot.catch((err) => {
+      this.logger.error(`Bot error: ${err.message}`);
+      void this.alertAdmin('bot', `${err.message}\n${err.stack ?? ''}`);
+    });
   }
 
   /**
