@@ -72,6 +72,15 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
   ) {}
 
   /** 7-day check: ask the taker if the case worked, with resolve buttons. */
+  /** Delete a bot message after 5 minutes (keeps command chatter from piling up). */
+  private scheduleAutoDelete(chatId: number, messageId: number): void {
+    setTimeout(() => {
+      this.bot?.api.deleteMessage(chatId, messageId).catch(() => {
+        /* already deleted, or too old for the bot to remove — ignore */
+      });
+    }, 5 * 60 * 1000);
+  }
+
   async sendResultPrompt(telegramId: number, workItemId: string, title: string): Promise<void> {
     if (!this.bot) return;
     const kb = new InlineKeyboard()
@@ -173,6 +182,21 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
 
   // ── Handlers ────────────────────────────────────────────────
   private registerHandlers(bot: Bot): void {
+    // Auto-delete every ctx.reply() after 5 minutes so command chatter
+    // (/stats, /users, /stores, /regions, confirmations, etc.) doesn't
+    // clutter the chat. Background/proactive messages (7-day reminders,
+    // author-success pings) go through bot.api.sendMessage directly and
+    // are untouched by this.
+    bot.use(async (ctx, next) => {
+      const originalReply = ctx.reply.bind(ctx);
+      ctx.reply = (async (...args: Parameters<typeof originalReply>) => {
+        const msg = await originalReply(...args);
+        this.scheduleAutoDelete(msg.chat.id, msg.message_id);
+        return msg;
+      }) as typeof ctx.reply;
+      await next();
+    });
+
     // Commands first — the generic message:text handler below stops the chain
     // when it has nothing to do, so it must be registered last.
     bot.command('start', (ctx) => this.onStart(ctx));
