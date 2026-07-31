@@ -527,6 +527,10 @@ export class UsersService {
     if (cntErr) throw cntErr;
     if ((count ?? 0) > 0) return 'has_users';
 
+    // No users left in the region → any leftover invite links are stale
+    // (unused test invites, or ones whose only user already left). Safe to drop.
+    await this.supabase.db.from('invites').delete().eq('region_id', regionId);
+
     const { error: delErr } = await this.supabase.db
       .from('regions')
       .delete()
