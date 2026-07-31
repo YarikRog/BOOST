@@ -145,6 +145,26 @@ export class InvitesService {
     return { user, needsStoreCreation: invite.role === UserRole.DIRECTOR };
   }
 
+  /**
+   * Look up a token's store/region without consuming it — used when an
+   * already-onboarded user (e.g. MEGA_ADMIN with no store) wants to attach to
+   * a store via someone else's invite link without taking their role/slot.
+   */
+  async peekScope(token: string): Promise<{ storeId: string | null; regionId: string | null } | null> {
+    const { data: invite, error } = await this.supabase.db
+      .from('invites')
+      .select('store_id, region_id, status, expires_at')
+      .eq('token', token)
+      .maybeSingle();
+    if (error) throw error;
+    if (!invite) return null;
+    if (invite.expires_at && new Date(invite.expires_at as string) < new Date()) return null;
+    return {
+      storeId: (invite.store_id as string | null) ?? null,
+      regionId: (invite.region_id as string | null) ?? null,
+    };
+  }
+
   private deepLink(token: string): string | null {
     const username = this.config.get<string>('BOT_USERNAME');
     return username ? `https://t.me/${username}?start=${token}` : null;

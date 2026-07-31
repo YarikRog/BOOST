@@ -238,6 +238,33 @@ export class UsersService {
   }
 
   /**
+   * Attach an already-onboarded user (e.g. MEGA_ADMIN with no store) to a
+   * store, without touching their role. Used when someone else's invite/pilot
+   * link is used just to "join" a store for visibility, not to onboard fresh.
+   * No-op if the user already has a store.
+   */
+  async attachToStore(userId: string, storeId: string): Promise<UserRow> {
+    const user = await this.requireUser(userId);
+    if (user.store_id) return user;
+
+    const { data: store, error: storeErr } = await this.supabase.db
+      .from('stores')
+      .select('id, region_id')
+      .eq('id', storeId)
+      .maybeSingle();
+    if (storeErr) throw storeErr;
+    if (!store) throw new BadRequestException('Store link is invalid.');
+
+    const { error } = await this.supabase.db
+      .from('users')
+      .update({ store_id: storeId, region_id: (store as { region_id: string }).region_id })
+      .eq('id', userId);
+    if (error) throw error;
+
+    return this.requireUser(userId);
+  }
+
+  /**
    * TEST-ONLY hard delete by telegram_id. Removes the user and everything that
    * FK-references them (reactions, work-items, authored lifehacks, invites) so
    * the row can actually be deleted. Nulls out stores.director_id pointing at
@@ -300,6 +327,10 @@ export class UsersService {
     if (cntErr) throw cntErr;
     if ((count ?? 0) > 0) return 'has_users';
 
+    // No users left in the store → any leftover invite links are stale
+    // (unused test invites, or the only user already left). Safe to drop.
+    await this.supabase.db.from('invites').delete().eq('store_id', storeId);
+
     const regionId = (store as { region_id: string | null }).region_id;
     const { error: delErr } = await this.supabase.db.from('stores').delete().eq('id', storeId);
     if (delErr) throw delErr;
@@ -311,6 +342,7 @@ export class UsersService {
         .select('id', { count: 'exact', head: true })
         .eq('region_id', regionId);
       if ((regUse ?? 0) === 0) {
+        await this.supabase.db.from('invites').delete().eq('region_id', regionId);
         await this.supabase.db.from('regions').delete().eq('id', regionId);
       }
     }

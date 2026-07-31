@@ -184,8 +184,11 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     bot.command('help', (ctx) => this.onHelp(ctx));
     bot.command('stats', (ctx) => this.onStats(ctx));
     bot.command('users', (ctx) => this.onUsers(ctx));
-    bot.callbackQuery(/^delstore:(.+)$/, (ctx) => this.onDeleteStore(ctx));
-    bot.callbackQuery(/^delregion:(.+)$/, (ctx) => this.onDeleteRegion(ctx));
+    bot.callbackQuery(/^delstore:(.+)$/, (ctx) => this.onDeleteStoreConfirm(ctx));
+    bot.callbackQuery(/^delregion:(.+)$/, (ctx) => this.onDeleteRegionConfirm(ctx));
+    bot.callbackQuery(/^doDelStore:(.+)$/, (ctx) => this.onDeleteStore(ctx));
+    bot.callbackQuery(/^doDelRegion:(.+)$/, (ctx) => this.onDeleteRegion(ctx));
+    bot.callbackQuery(/^cancelDel$/, (ctx) => this.onCancelDelete(ctx));
     bot.hears(ADMIN_NEW_STORE_BTN, (ctx) => {
       const tgId = ctx.from?.id;
       return tgId ? this.promptStoreName(ctx, tgId) : Promise.resolve();
@@ -398,7 +401,25 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     await ctx.reply(`Магазини (${stores.length}). Тисни, щоб видалити порожній:`, { reply_markup: kb });
   }
 
-  /** Handles the 🗑 delete buttons from /stores. */
+  /** First tap on a 🗑 store button from /stores → ask for confirmation. */
+  private async onDeleteStoreConfirm(ctx: Context): Promise<void> {
+    const tgId = ctx.from?.id;
+    if (!tgId) return;
+    await ctx.answerCallbackQuery();
+    const caller = await this.users.findByTelegramId(tgId);
+    if (!caller || !this.isAdmin(caller.role)) {
+      await ctx.reply('🔒 Команда лише для адміністратора.');
+      return;
+    }
+    const storeId = (ctx.match as RegExpMatchArray)[1];
+    const name = await this.users.storeName(storeId);
+    const kb = new InlineKeyboard()
+      .text('✅ Так, видалити', `doDelStore:${storeId}`)
+      .text('❌ Скасувати', 'cancelDel');
+    await ctx.reply(`Точно видалити магазин «${name ?? storeId}»?`, { reply_markup: kb });
+  }
+
+  /** Second tap (after confirmation) → actually delete the store. */
   private async onDeleteStore(ctx: Context): Promise<void> {
     const tgId = ctx.from?.id;
     if (!tgId) return;
@@ -418,6 +439,12 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     } catch (e) {
       await ctx.reply(`❌ ${(e as Error).message}`);
     }
+  }
+
+  /** Cancel button on any delete-confirmation prompt. */
+  private async onCancelDelete(ctx: Context): Promise<void> {
+    await ctx.answerCallbackQuery();
+    await ctx.reply('Скасовано.');
   }
 
   /** Admin-only: `/regions` lists every region with user counts and delete button. */
@@ -444,7 +471,26 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     await ctx.reply(`Регіони (${regions.length}). Тисни, щоб видалити порожній:`, { reply_markup: kb });
   }
 
-  /** Handles the delete buttons from /regions. */
+  /** First tap on a region button from /regions → ask for confirmation. */
+  private async onDeleteRegionConfirm(ctx: Context): Promise<void> {
+    const tgId = ctx.from?.id;
+    if (!tgId) return;
+    await ctx.answerCallbackQuery();
+    const caller = await this.users.findByTelegramId(tgId);
+    if (!caller || !this.isAdmin(caller.role)) {
+      await ctx.reply('🔒 Команда лише для адміністратора.');
+      return;
+    }
+    const regionId = (ctx.match as RegExpMatchArray)[1];
+    const regions = await this.users.listRegionsWithCounts();
+    const region = regions.find((r) => r.id === regionId);
+    const kb = new InlineKeyboard()
+      .text('✅ Так, видалити', `doDelRegion:${regionId}`)
+      .text('❌ Скасувати', 'cancelDel');
+    await ctx.reply(`Точно видалити регіон «${region?.name ?? regionId}»?`, { reply_markup: kb });
+  }
+
+  /** Second tap (after confirmation) → actually delete the region. */
   private async onDeleteRegion(ctx: Context): Promise<void> {
     const tgId = ctx.from?.id;
     if (!tgId) return;
@@ -640,9 +686,23 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     // /start always unsticks any half-finished flow.
     await this.clearTransientFlow(tgId);
 
-    // Already onboarded — re-entry regardless of which link they used.
+    // Already onboarded — re-entry regardless of which link they used, UNLESS
+    // they have no store yet and this link points to one (e.g. MEGA_ADMIN
+    // joining a store via the director's invite link, purely for visibility —
+    // role is untouched).
     const existing = await this.users.findByTelegramId(tgId);
     if (existing && existing.phone && existing.experience_segment) {
+      if (payload && !existing.store_id) {
+        const storeId = await this.resolveStoreIdFromPayload(payload);
+        if (storeId) {
+          try {
+            await this.users.attachToStore(existing.id, storeId);
+            await ctx.reply('✅ Тебе додано до магазину.');
+          } catch (e) {
+            await ctx.reply(`❌ ${(e as Error).message}`);
+          }
+        }
+      }
       await this.setMenuButton(tgId);
       const kb = this.keyboardFor(existing.role);
       await ctx.reply(
@@ -700,6 +760,14 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     } catch (e) {
       await ctx.reply(`❌ ${(e as Error).message}`);
     }
+  }
+
+  /** Extract a store id from any kind of /start payload — pilot link or single-use invite token. */
+  private async resolveStoreIdFromPayload(payload: string): Promise<string | null> {
+    const storeLinkMatch = payload.match(/^(store|dir)_(.+)$/);
+    if (storeLinkMatch) return storeLinkMatch[2];
+    const scope = await this.invites.peekScope(payload);
+    return scope?.storeId ?? null;
   }
 
   /**
