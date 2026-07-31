@@ -180,10 +180,12 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     bot.command('newstore', (ctx) => this.onNewStore(ctx));
     bot.command('reset', (ctx) => this.onReset(ctx));
     bot.command('stores', (ctx) => this.onStores(ctx));
+    bot.command('regions', (ctx) => this.onRegions(ctx));
     bot.command('help', (ctx) => this.onHelp(ctx));
     bot.command('stats', (ctx) => this.onStats(ctx));
     bot.command('users', (ctx) => this.onUsers(ctx));
     bot.callbackQuery(/^delstore:(.+)$/, (ctx) => this.onDeleteStore(ctx));
+    bot.callbackQuery(/^delregion:(.+)$/, (ctx) => this.onDeleteRegion(ctx));
     bot.hears(ADMIN_NEW_STORE_BTN, (ctx) => {
       const tgId = ctx.from?.id;
       return tgId ? this.promptStoreName(ctx, tgId) : Promise.resolve();
@@ -300,8 +302,9 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
         '/users — по кожному юзеру: скільки написав кейсів (✍️), скільки взяв ' +
         'у роботу (📌), скільки успішних (🔥), скільки разів відкривав ' +
         'застосунок (📱) і коли заходив востаннє\n\n' +
-        '🏪 МАГАЗИНИ\n' +
+        '🏪 МАГАЗИНИ І РЕГІОНИ\n' +
         '/stores — список усіх магазинів; тап по магазину видаляє порожній\n' +
+        '/regions — список регіонів зі скількістю людей; видаляє порожні\n' +
         '/newstore <назва> — створити магазин одразу з назвою ' +
         '(без назви — запитає)\n\n' +
         '🧹 ОБСЛУГОВУВАННЯ\n' +
@@ -412,6 +415,52 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       if (res === 'not_found') await ctx.reply('Магазин уже видалено.');
       else if (res === 'has_users') await ctx.reply('❌ У магазині є користувачі — спочатку прибери їх через /reset.');
       else await ctx.reply('🗑 Магазин видалено.');
+    } catch (e) {
+      await ctx.reply(`❌ ${(e as Error).message}`);
+    }
+  }
+
+  /** Admin-only: `/regions` lists every region with user counts and delete button. */
+  private async onRegions(ctx: Context): Promise<void> {
+    const tgId = ctx.from?.id;
+    if (!tgId) return;
+    const caller = await this.users.findByTelegramId(tgId);
+    if (!caller || !this.isAdmin(caller.role)) {
+      await ctx.reply('🔒 Команда лише для адміністратора.');
+      return;
+    }
+
+    const regions = await this.users.listRegionsWithCounts();
+    if (!regions.length) {
+      await ctx.reply('Регіонів ще немає.');
+      return;
+    }
+
+    const kb = new InlineKeyboard();
+    for (const r of regions) {
+      const label = r.userCount === 0 ? `🗑 ${r.name} (0 людей)` : `${r.name} (${r.userCount} 👥)`;
+      kb.text(label, `delregion:${r.id}`).row();
+    }
+    await ctx.reply(`Регіони (${regions.length}). Тисни, щоб видалити порожній:`, { reply_markup: kb });
+  }
+
+  /** Handles the delete buttons from /regions. */
+  private async onDeleteRegion(ctx: Context): Promise<void> {
+    const tgId = ctx.from?.id;
+    if (!tgId) return;
+    await ctx.answerCallbackQuery();
+    const caller = await this.users.findByTelegramId(tgId);
+    if (!caller || !this.isAdmin(caller.role)) {
+      await ctx.reply('🔒 Команда лише для адміністратора.');
+      return;
+    }
+
+    const regionId = (ctx.match as RegExpMatchArray)[1];
+    try {
+      const res = await this.users.deleteRegion(regionId);
+      if (res === 'not_found') await ctx.reply('Регіон уже видалено.');
+      else if (res === 'has_users') await ctx.reply('❌ У регіоні є користувачі — спочатку прибери їх через /reset.');
+      else await ctx.reply('🗑 Регіон видалено.');
     } catch (e) {
       await ctx.reply(`❌ ${(e as Error).message}`);
     }

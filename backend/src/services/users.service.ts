@@ -484,6 +484,57 @@ export class UsersService {
     return (data as { name: string } | null)?.name ?? null;
   }
 
+  /** List all regions with user counts (admin cleanup). */
+  async listRegionsWithCounts(): Promise<Array<{ id: string; name: string; userCount: number }>> {
+    const { data: regions, error: regErr } = await this.supabase.db
+      .from('regions')
+      .select('id, name')
+      .order('name', { ascending: true });
+    if (regErr) throw regErr;
+
+    const result = [];
+    for (const region of regions ?? []) {
+      const { count, error: cntErr } = await this.supabase.db
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .eq('region_id', region.id);
+      if (cntErr) throw cntErr;
+      result.push({
+        id: region.id,
+        name: region.name,
+        userCount: count ?? 0,
+      });
+    }
+    return result;
+  }
+
+  /**
+   * Delete a region. Refuses if any users are attached. Returns 'ok' | 'not_found' | 'has_users'.
+   */
+  async deleteRegion(regionId: string): Promise<'ok' | 'not_found' | 'has_users'> {
+    const { data: region, error } = await this.supabase.db
+      .from('regions')
+      .select('id')
+      .eq('id', regionId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!region) return 'not_found';
+
+    const { count, error: cntErr } = await this.supabase.db
+      .from('users')
+      .select('id', { count: 'exact', head: true })
+      .eq('region_id', regionId);
+    if (cntErr) throw cntErr;
+    if ((count ?? 0) > 0) return 'has_users';
+
+    const { error: delErr } = await this.supabase.db
+      .from('regions')
+      .delete()
+      .eq('id', regionId);
+    if (delErr) throw delErr;
+    return 'ok';
+  }
+
   private async requireUser(userId: string): Promise<UserRow> {
     const { data, error } = await this.supabase.db
       .from('users')
