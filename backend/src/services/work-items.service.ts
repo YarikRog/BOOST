@@ -110,7 +110,7 @@ export class WorkItemsService {
       .eq('user_id', userId) // only your own work item
       .eq('status', WorkItemStatus.in_work) // only an active item can be resolved
       .select('id, lifehack_id')
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
     if (!data) throw new BadRequestException('Кейс не в роботі або не існує.');
