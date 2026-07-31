@@ -95,6 +95,9 @@ export class WorkItemsService {
       );
     }
 
+    // Engagement loop: tell the author someone is trying their case.
+    await this.bot.notifyAuthorTaken(lifehackId);
+
     return data;
   }
 

@@ -134,6 +134,35 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     }
   }
 
+  /** Notify a case's author that a colleague just took it into work (engagement loop). */
+  async notifyAuthorTaken(lifehackId: string): Promise<void> {
+    if (!this.bot) return;
+    try {
+      const { data: lh } = await this.supabase.db
+        .from('lifehacks')
+        .select('author_id, title')
+        .eq('id', lifehackId)
+        .maybeSingle();
+      if (!lh) return;
+      const author = lh as { author_id: string; title: string };
+      const { data: u } = await this.supabase.db
+        .from('users')
+        .select('telegram_id')
+        .eq('id', author.author_id)
+        .maybeSingle();
+      const tg = (u as { telegram_id: number } | null)?.telegram_id;
+      if (!tg) return;
+      await this.bot.api.sendMessage(
+        tg,
+        `✨ Твій кейс «${author.title}» щойно взяли в роботу!\n\n` +
+          `Хтось із колег зараз спробує твій прийом із клієнтом — можливо, ` +
+          `саме він допоможе комусь закрити продаж. Дякуємо, що ділишся 🙌`,
+      );
+    } catch (e) {
+      this.logger.error(`notifyAuthorTaken failed: ${(e as Error).message}`);
+    }
+  }
+
   /** Send a voice message to a user by telegram id (used to forward voice cases). */
   async sendVoice(telegramId: number, fileId: string, caption?: string): Promise<void> {
     if (!this.bot) return;
