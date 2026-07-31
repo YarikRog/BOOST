@@ -71,13 +71,21 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly categories: CategoriesService,
   ) {}
 
-  /** Delete a bot message after 5 minutes (keeps command chatter from piling up). */
+  /**
+   * Queue a bot message for deletion in 5 minutes (keeps command chatter from
+   * piling up). Backed by Redis (see AutoDeleteWorker), not setTimeout — a
+   * redeploy restarts this process often, which would silently drop in-memory
+   * timers and leave messages stuck forever.
+   */
   private scheduleAutoDelete(chatId: number, messageId: number): void {
-    setTimeout(() => {
-      this.bot?.api.deleteMessage(chatId, messageId).catch(() => {
-        /* already deleted, or too old for the bot to remove — ignore */
-      });
-    }, 5 * 60 * 1000);
+    void this.redis.scheduleMessageDelete(chatId, messageId, 5 * 60 * 1000);
+  }
+
+  /** Called by AutoDeleteWorker's sweep — actually deletes a due message. */
+  async deleteMessage(chatId: number, messageId: number): Promise<void> {
+    await this.bot?.api.deleteMessage(chatId, messageId).catch(() => {
+      /* already deleted, or too old for the bot to remove — ignore */
+    });
   }
 
   /**
@@ -246,6 +254,18 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
         return msg;
       }) as typeof ctx.reply;
       await next();
+    });
+
+    // The command message itself (e.g. "/stats") gets deleted immediately
+    // once we're done handling it — no reason for it to linger either.
+    bot.use(async (ctx, next) => {
+      const isCommand = ctx.message?.text?.startsWith('/');
+      await next();
+      if (isCommand && ctx.chat) {
+        await ctx.deleteMessage().catch(() => {
+          /* can't delete (e.g. >48h old) — ignore */
+        });
+      }
     });
 
     // Commands first — the generic message:text handler below stops the chain

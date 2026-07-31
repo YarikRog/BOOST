@@ -63,4 +63,22 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     const keys = await this.redis.keys(`feed:${category}:*`);
     if (keys.length) await this.redis.del(...keys);
   }
+
+  // ── Scheduled bot-message deletion ──────────────────────────
+  // Sorted set instead of setTimeout: survives a redeploy (Railway restarts
+  // the process often), since the due time lives in Redis, not process memory.
+  async scheduleMessageDelete(chatId: number, messageId: number, delayMs: number): Promise<void> {
+    await this.redis.zadd('autodelete:msgs', Date.now() + delayMs, `${chatId}:${messageId}`);
+  }
+
+  /** Pop all entries due for deletion (score <= now) and remove them from the set. */
+  async popDueMessageDeletes(): Promise<Array<{ chatId: number; messageId: number }>> {
+    const due = await this.redis.zrangebyscore('autodelete:msgs', 0, Date.now());
+    if (!due.length) return [];
+    await this.redis.zrem('autodelete:msgs', ...due);
+    return due.map((entry) => {
+      const [chatId, messageId] = entry.split(':').map(Number);
+      return { chatId, messageId };
+    });
+  }
 }
