@@ -321,6 +321,18 @@ export class UsersService {
     return this.requireUser(userId);
   }
 
+  /**
+   * Log a WebApp open. Fire-and-forget: a failure here must never block the
+   * app from loading, so errors are swallowed.
+   */
+  async recordAppOpen(userId: string): Promise<void> {
+    try {
+      await this.supabase.db.from('app_opens').insert({ user_id: userId });
+    } catch {
+      /* non-critical telemetry */
+    }
+  }
+
   /** Platform-wide stats for the admin /stats command. */
   async platformStats(): Promise<{
     users: number;
@@ -332,6 +344,7 @@ export class UsersService {
     confirmations: number;
     successRate: number;
     engaged: { authors: number; takers: number };
+    opens: { total: number; today: number; week: number; uniqueWeek: number };
   }> {
     const db = this.supabase.db;
     const countOf = async (
@@ -373,6 +386,17 @@ export class UsersService {
       .eq('status', 'published');
     const authors = new Set((authorsRows ?? []).map((r) => r.author_id as string));
 
+    // WebApp opens: total, today, last 7 days (+ distinct users this week).
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const [totalOpens, { data: weekOpens }, { data: todayOpens }] = await Promise.all([
+      countOf('app_opens'),
+      db.from('app_opens').select('user_id').gte('opened_at', weekAgo.toISOString()),
+      db.from('app_opens').select('id').gte('opened_at', startOfDay.toISOString()),
+    ]);
+    const uniqueWeek = new Set((weekOpens ?? []).map((o) => o.user_id as string)).size;
+
     const confirmations = wc.success + wc.partial + wc.fail;
     const successRate = confirmations > 0 ? Math.round((wc.success / confirmations) * 100) : 0;
     return {
@@ -385,22 +409,39 @@ export class UsersService {
       confirmations,
       successRate,
       engaged: { authors: authors.size, takers: takers.size },
+      opens: {
+        total: totalOpens,
+        today: (todayOpens ?? []).length,
+        week: (weekOpens ?? []).length,
+        uniqueWeek,
+      },
     };
   }
 
-  /** Per-user activity (written / taken / success) for the admin /users command. */
-  async usersActivity(
-    limit = 25,
-  ): Promise<{ name: string; role: string; written: number; taken: number; success: number }[]> {
+  /** Per-user activity (opens / written / taken / success) for `/users`. */
+  async usersActivity(limit = 25): Promise<
+    {
+      name: string;
+      role: string;
+      written: number;
+      taken: number;
+      success: number;
+      opens: number;
+      lastSeen: string | null;
+    }[]
+  > {
     const db = this.supabase.db;
-    const [usersRes, lhsRes, wisRes] = await Promise.all([
+    const [usersRes, lhsRes, wisRes, opensRes] = await Promise.all([
       db.from('users').select('id, name, role'),
       db.from('lifehacks').select('author_id').eq('status', 'published'),
       db.from('work_items').select('user_id, status'),
+      db.from('app_opens').select('user_id, opened_at'),
     ]);
     const written = new Map<string, number>();
     const taken = new Map<string, number>();
     const success = new Map<string, number>();
+    const opens = new Map<string, number>();
+    const lastSeen = new Map<string, string>();
     (lhsRes.data ?? []).forEach((l) =>
       written.set(l.author_id as string, (written.get(l.author_id as string) ?? 0) + 1),
     );
@@ -409,14 +450,26 @@ export class UsersService {
       if (w.status === 'success')
         success.set(w.user_id as string, (success.get(w.user_id as string) ?? 0) + 1);
     });
+    (opensRes.data ?? []).forEach((o) => {
+      const uid = o.user_id as string;
+      const at = o.opened_at as string;
+      opens.set(uid, (opens.get(uid) ?? 0) + 1);
+      const prev = lastSeen.get(uid);
+      if (!prev || at > prev) lastSeen.set(uid, at);
+    });
     const rows = (usersRes.data ?? []).map((u) => ({
       name: (u.name as string) || '—',
       role: u.role as string,
       written: written.get(u.id as string) ?? 0,
       taken: taken.get(u.id as string) ?? 0,
       success: success.get(u.id as string) ?? 0,
+      opens: opens.get(u.id as string) ?? 0,
+      lastSeen: lastSeen.get(u.id as string) ?? null,
     }));
-    rows.sort((a, b) => b.written + b.taken - (a.written + a.taken));
+    // Actions weigh more than opens, but opens break ties so browsers still rank.
+    const score = (r: { written: number; taken: number; opens: number }): number =>
+      (r.written + r.taken) * 100 + r.opens;
+    rows.sort((a, b) => score(b) - score(a));
     return rows.slice(0, limit);
   }
 

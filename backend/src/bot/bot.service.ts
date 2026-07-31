@@ -282,19 +282,35 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     const admin = caller ? this.isAdmin(caller.role) : false;
 
     let text =
-      '📖 Команди:\n\n' +
-      '/start — вхід / головне меню\n' +
-      '/app — відкрити застосунок\n' +
-      '/help — цей список\n';
+      '📖 ДОВІДКА BOOST\n\n' +
+      '━━ Для всіх ━━\n' +
+      '/start — увійти / показати головне меню з кнопками\n' +
+      '/app — відкрити застосунок з кейсами\n' +
+      '/help — цей список команд\n\n' +
+      '🎙️ Щоб додати голосовий кейс: у застосунку тисни «+», обери ' +
+      'категорію і товар, натисни мікрофон — далі надішли сюди голосове.';
+
     if (admin) {
       text +=
-        '\n👑 Адмін:\n' +
-        '/stats — зведена статистика платформи\n' +
-        '/users — активність по кожному юзеру\n' +
-        '/stores — список магазинів (+ видалення)\n' +
-        '/newstore <назва> — створити магазин\n' +
-        '/reset [id] — видалити юзера (або себе)\n' +
-        '\nКнопки знизу: створити магазин, запросити ліда/директора/продавця.';
+        '\n\n━━ 👑 Адмін ━━\n\n' +
+        '📊 СТАТИСТИКА\n' +
+        '/stats — зведення по платформі: скільки юзерів, магазинів, кейсів, ' +
+        'скільки разів відкривали застосунок (всього / сьогодні / за тиждень), ' +
+        'скільки підтверджень і % успішності\n' +
+        '/users — по кожному юзеру: скільки написав кейсів (✍️), скільки взяв ' +
+        'у роботу (📌), скільки успішних (🔥), скільки разів відкривав ' +
+        'застосунок (📱) і коли заходив востаннє\n\n' +
+        '🏪 МАГАЗИНИ\n' +
+        '/stores — список усіх магазинів; тап по магазину видаляє порожній\n' +
+        '/newstore <назва> — створити магазин одразу з назвою ' +
+        '(без назви — запитає)\n\n' +
+        '🧹 ОБСЛУГОВУВАННЯ\n' +
+        '/reset — видалити СЕБЕ (потім /start створить заново)\n' +
+        '/reset <telegram_id> — видалити конкретного юзера (для тестів)\n\n' +
+        '⌨️ КНОПКИ ЗНИЗУ\n' +
+        '🏪 Створити магазин — новий магазин\n' +
+        '➕ Рег. ІТ-лід — запросити регіонального ліда (спершу спитає регіон)\n' +
+        '➕ Директор — запросити директора магазину (спершу спитає регіон)';
     }
     await ctx.reply(text);
   }
@@ -313,6 +329,9 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
         `👥 Юзери: ${s.users} (активних ${s.activeUsers})\n` +
         `🏪 Магазини: ${s.stores} · Регіони: ${s.regions}\n` +
         `💡 Кейси опубліковано: ${s.lifehacks}\n\n` +
+        `📱 Відкриттів застосунку: ${s.opens.total} всього\n` +
+        `   сьогодні ${s.opens.today} · за тиждень ${s.opens.week} ` +
+        `(${s.opens.uniqueWeek} унік. юзерів)\n\n` +
         `📌 В роботі зараз: ${s.wc.in_work}\n` +
         `✅ Підтверджень: ${s.confirmations} ` +
         `(🔥 ${s.wc.success} / 😐 ${s.wc.partial} / ❌ ${s.wc.fail})\n` +
@@ -335,10 +354,22 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       await ctx.reply('Ще немає юзерів.');
       return;
     }
+    const ago = (iso: string | null): string => {
+      if (!iso) return 'не заходив';
+      const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400_000);
+      if (days === 0) return 'сьогодні';
+      if (days === 1) return 'вчора';
+      return `${days} дн. тому`;
+    };
     const lines = rows.map(
-      (r) => `• ${r.name} (${roleLabel(r.role as UserRole)}) — ✍️${r.written} 📌${r.taken} 🔥${r.success}`,
+      (r) =>
+        `• ${r.name} (${roleLabel(r.role as UserRole)})\n` +
+        `   ✍️${r.written} 📌${r.taken} 🔥${r.success} 📱${r.opens} · ${ago(r.lastSeen)}`,
     );
-    await ctx.reply('👥 Активність (✍️ написав · 📌 брав · 🔥 успіх):\n\n' + lines.join('\n'));
+    await ctx.reply(
+      '👥 Активність\n✍️ написав · 📌 брав у роботу · 🔥 успіх · 📱 відкриттів застосунку\n\n' +
+        lines.join('\n'),
+    );
   }
 
   /** Admin-only: `/stores` lists every store with a delete button each. */

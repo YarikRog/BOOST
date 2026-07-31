@@ -13,13 +13,18 @@ export class AuthController {
     private readonly users: UsersService,
   ) {}
 
-  /** POST /auth/telegram — validate initData, return the app user ("me"). */
+  /**
+   * POST /auth/telegram — validate initData, return the app user ("me").
+   * The WebApp calls this once on launch, so it doubles as the "app opened"
+   * signal for engagement stats.
+   */
   @Post('telegram')
   async telegram(@Body() body: VerifyBody) {
     const tgUser = this.auth.validate(body.initData);
     const appUser = await this.users.findByTelegramId(tgUser.id);
     if (!appUser) throw new UnauthorizedException('User not onboarded.');
     const storeName = await this.users.storeName(appUser.store_id);
+    await this.users.recordAppOpen(appUser.id);
     return { ...appUser, storeName };
   }
 }
