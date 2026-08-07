@@ -1,8 +1,10 @@
 import {
+  Inject,
   Injectable,
   Logger,
   OnApplicationBootstrap,
   OnModuleDestroy,
+  forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Bot, InlineKeyboard, Keyboard, Context } from 'grammy';
@@ -67,6 +69,7 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly supabase: SupabaseService,
     private readonly invites: InvitesService,
     private readonly users: UsersService,
+    @Inject(forwardRef(() => LifehacksService))
     private readonly lifehacks: LifehacksService,
     private readonly categories: CategoriesService,
   ) {}
@@ -106,6 +109,49 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       );
     } catch (e) {
       this.logger.error(`alertAdmin failed to notify: ${(e as Error).message}`);
+    }
+  }
+
+  /**
+   * Ping everyone (except the author) that a fresh case just dropped, with a
+   * button straight into the WebApp. Best-effort per user — one blocked/left
+   * user must never stop the rest of the broadcast, and a small delay between
+   * sends keeps us well under Telegram's flood limits.
+   */
+  async broadcastNewLifehack(
+    lifehackId: string,
+    title: string,
+    categoryName: string,
+    authorId: string,
+  ): Promise<void> {
+    if (!this.bot) return;
+    const webAppUrl = this.config.get<string>('WEBAPP_URL');
+    try {
+      const { data: recipients, error } = await this.supabase.db
+        .from('users')
+        .select('telegram_id')
+        .eq('status', 'active')
+        .neq('id', authorId);
+      if (error) throw error;
+
+      const kb = webAppUrl
+        ? new InlineKeyboard().webApp('📲 Відкрити BOOST', webAppUrl)
+        : undefined;
+      const text =
+        `✨ Новий лайфхак у стрічці «${categoryName}»\n\n` +
+        `«${title}»\n\n` +
+        `Глянь, може саме він допоможе тобі закрити наступний продаж 👇`;
+
+      for (const r of (recipients ?? []) as Array<{ telegram_id: number }>) {
+        try {
+          await this.bot.api.sendMessage(r.telegram_id, text, kb ? { reply_markup: kb } : undefined);
+        } catch (e) {
+          this.logger.warn(`broadcastNewLifehack to ${r.telegram_id} failed: ${(e as Error).message}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 40)); // stay under flood limits
+      }
+    } catch (e) {
+      this.logger.error(`broadcastNewLifehack(${lifehackId}) failed: ${(e as Error).message}`);
     }
   }
 

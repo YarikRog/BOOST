@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { SupabaseService } from '../integrations/supabase.client';
@@ -6,6 +6,7 @@ import { RedisService } from '../integrations/redis.client';
 import { ScoringService } from './scoring.service';
 import { Experience, LifehackStatus, WorkItemStatus } from '../common/enums';
 import { UserRow } from './users.service';
+import { BotService } from '../bot/bot.service';
 
 type Audience = 'newcomer' | 'experienced';
 
@@ -27,6 +28,8 @@ export class LifehacksService {
     private readonly redis: RedisService,
     private readonly scoring: ScoringService,
     private readonly config: ConfigService,
+    @Inject(forwardRef(() => BotService))
+    private readonly bot: BotService,
   ) {}
 
   static audienceOf(segment: Experience | null): Audience {
@@ -219,12 +222,12 @@ export class LifehacksService {
 
     const { data: cat, error: catErr } = await this.supabase.db
       .from('categories')
-      .select('id')
+      .select('id, name')
       .eq('slug', input.categorySlug)
       .maybeSingle();
     if (catErr) throw catErr;
     if (!cat) throw new BadRequestException('Невідома категорія.');
-    const categoryId = (cat as { id: string }).id;
+    const { id: categoryId, name: categoryName } = cat as { id: string; name: string };
 
     // Voice case: copy the audio into our own storage so it survives regardless
     // of the Telegram file_id lifecycle. Keep file_id as a fallback.
@@ -250,9 +253,12 @@ export class LifehacksService {
       .select('id')
       .single();
     if (error) throw error;
+    const newId = (data as { id: string }).id;
 
     await this.redis.invalidateFeed(categoryId);
-    return { id: (data as { id: string }).id };
+    // Fire-and-forget: notify everyone else there's a fresh case to try.
+    void this.bot.broadcastNewLifehack(newId, title, categoryName, author.id);
+    return { id: newId };
   }
 
   /** Feed by category slug — one endpoint call for the WebApp (no pre-fetch). */
