@@ -297,19 +297,37 @@ export class UsersService {
     // cases: those outcomes are other people's work and the evidence the whole
     // scoring model runs on. Resetting a fresh test account stays easy; wiping
     // real history has to be a deliberate act, not a side effect of /reset.
+    // Checked in BOTH directions: outcomes colleagues reported on this user's
+    // cases, and outcomes this user reported on other people's cases. The
+    // cascades below would erase either, and both are scoring evidence that
+    // belongs to the platform rather than to the row being removed.
+    const scored = [...SCORED_OUTCOMES];
+
+    let onOwnCases = 0;
     if (lifehackIds.length) {
-      const { count, error: cntErr } = await db
+      const { count, error: e1 } = await db
         .from('work_items')
         .select('id', { count: 'exact', head: true })
         .in('lifehack_id', lifehackIds)
-        .in('status', [...SCORED_OUTCOMES]);
-      if (cntErr) throw cntErr;
-      if ((count ?? 0) > 0) {
-        throw new BadRequestException(
-          `У цього юзера ${count} підтверджених результатів на його кейсах. ` +
-            'Видалення знищить історію колег. Спочатку заархівуй кейси вручну.',
-        );
-      }
+        .in('status', scored);
+      if (e1) throw e1;
+      onOwnCases = count ?? 0;
+    }
+
+    const { count: reportedCount, error: e2 } = await db
+      .from('work_items')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', uid)
+      .in('status', scored);
+    if (e2) throw e2;
+    const reportedByUser = reportedCount ?? 0;
+
+    if (onOwnCases > 0 || reportedByUser > 0) {
+      throw new BadRequestException(
+        `Не можна видалити цього юзера: ${onOwnCases} підтверджень на його кейсах, ` +
+          `${reportedByUser} результатів, які він підтвердив сам. ` +
+          'Це історія, на якій тримається рейтинг кейсів.',
+      );
     }
 
     await db.from('reactions').delete().eq('user_id', uid);

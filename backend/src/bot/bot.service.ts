@@ -14,6 +14,7 @@ import { InvitesService } from '../services/invites.service';
 import { UsersService } from '../services/users.service';
 import { LifehacksService } from '../services/lifehacks.service';
 import { CategoriesService } from '../services/categories.service';
+import { WorkItemsService, ResolveOutcome } from '../services/work-items.service';
 import { Experience, UserRole } from '../common/enums';
 
 interface VoiceFlow {
@@ -71,6 +72,8 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly users: UsersService,
     @Inject(forwardRef(() => LifehacksService))
     private readonly lifehacks: LifehacksService,
+    @Inject(forwardRef(() => WorkItemsService))
+    private readonly workItems: WorkItemsService,
     private readonly categories: CategoriesService,
   ) {}
 
@@ -395,28 +398,14 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
     const user = await this.users.findByTelegramId(tgId);
     if (!user) return;
 
-    const { data } = await this.supabase.db
-      .from('work_items')
-      .update({ status: outcome, resolved_at: new Date().toISOString() })
-      .eq('id', workItemId)
-      .eq('user_id', user.id)
-      .eq('status', 'in_work')
-      .select('id, lifehack_id')
-      .maybeSingle();
-
-    if (!data) {
+    // Delegate to the one implementation. The bot used to repeat the ownership
+    // check, status guard, cache invalidation and author notification inline,
+    // which meant two copies of the same rules that could drift apart.
+    try {
+      await this.workItems.resolve(user.id, workItemId, outcome as ResolveOutcome);
+    } catch {
       await ctx.reply('Цей кейс уже підтверджено або не активний.');
       return;
-    }
-    // A real outcome changes the score → drop the category feed cache.
-    const { data: lh } = await this.supabase.db
-      .from('lifehacks')
-      .select('category_id')
-      .eq('id', (data as { lifehack_id: string }).lifehack_id)
-      .maybeSingle();
-    if (lh) await this.redis.invalidateFeed((lh as { category_id: string }).category_id);
-    if (outcome === 'success') {
-      await this.notifyAuthorSuccess((data as { lifehack_id: string }).lifehack_id);
     }
 
     const labels: Record<string, string> = {

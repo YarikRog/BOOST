@@ -32,6 +32,7 @@ Situational model, AI classification, auto-tagging, recommendation engine, conte
 - `DIRECTOR` and `DEP_DIRECTOR` have equal rights within their store.
 - Transfers (region/store/role change, deactivation) require confirmation; never silent.
 - No hard deletes. Only status changes (`active`/`inactive`/`archived`).
+- One deliberate exception: the admin `/reset <telegram_id>` command hard-deletes a user so onboarding can be re-run during testing (`telegram_id` is unique, so archiving would not free it). It **refuses** as soon as any scored outcome exists in either direction — on the user's own cases, or reported by them on someone else's — because those outcomes are platform-wide scoring evidence rather than the user's own data.
 - Deactivated author: lifehack stays, author display becomes "Колишній співробітник" / "Архівний автор" (no name).
 
 ### Pilot exception — store #1 (no hierarchy)
@@ -51,6 +52,7 @@ to add hierarchy-based stores alongside it.
 - Asked once at first login: "Скільки часу ви працюєте в Comfy?" — `<6m` / `6m–2y` / `2y+`.
 - Stored once, never asked again, never auto-derived from account age.
 - Not an attestation — only determines which feed mix a new user sees by default (newcomers lean toward top-confirmed content). Self-reported and not security/HR-relevant; minor inaccuracy has no real cost.
+- **Not implemented as of the first pilot.** The segment is collected, stored, resolved server-side from the authenticated user, and forms part of the feed cache key — but ranking is currently identical for both audiences. Newcomer bias is a planned product experiment to run against real pilot data, not an outstanding bug.
 
 ## 3. Lifehack structure (Layer 1)
 

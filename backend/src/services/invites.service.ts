@@ -8,7 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { SupabaseService } from '../integrations/supabase.client';
 import { InviteStatus, UserRole } from '../common/enums';
-import { UsersService, UserRow } from './users.service';
+import { UserRow } from './users.service';
 
 /**
  * Who can invite whom (PRODUCT_LOGIC §1). DIRECTOR and DEP_DIRECTOR have equal
@@ -36,7 +36,6 @@ export interface CreatedInvite {
 export class InvitesService {
   constructor(
     private readonly supabase: SupabaseService,
-    private readonly users: UsersService,
     private readonly config: ConfigService,
   ) {}
 

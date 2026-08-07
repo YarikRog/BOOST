@@ -36,6 +36,7 @@
     "typescript": "^5.3.3"
   },
   "devDependencies": {
+    "@nestjs/testing": "^10.4.22",
     "@types/jest": "^30.0.0",
     "jest": "^30.4.2",
     "ts-jest": "^29.4.12"
