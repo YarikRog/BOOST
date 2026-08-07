@@ -62,6 +62,20 @@ function isMine(item){ return LIVE && me && item && item.author_id === me.id; }
 
 let myReacts = {}; // lifehack_id → 'like' | 'dislike'
 
+// ===== Read/unread tracking (per-device, localStorage — no backend needed) =====
+const SEEN_KEY = 'boost_seen_ids';
+let seenIds = new Set();
+try { seenIds = new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); } catch(e) {}
+function isUnread(d){ return !isMine(d) && !seenIds.has(d.id); }
+function markSeen(id){
+  if(seenIds.has(id)) return;
+  seenIds.add(id);
+  // Cap stored history so this never grows unbounded on a long-lived device.
+  const arr = Array.from(seenIds);
+  if(arr.length > 500) arr.splice(0, arr.length - 500);
+  localStorage.setItem(SEEN_KEY, JSON.stringify(arr));
+}
+
 function normLive(x, catName){
   return {
     id:x.id, author_id:x.author_id, cat:catName, tier:tierOf(x.tried||0), title:x.title,
@@ -195,8 +209,10 @@ function renderFeed(dir){
           <button class="${myReacts[d.id]==='dislike'?'on':''}" onclick="reactTo(event,'${d.id}','dislike',this)">👎 ${d.dislikes||''}</button>
         </div>
       </div>`;
+    const unread = isUnread(d);
     return `
-    <div class="card" onclick="openDetail(${i})">
+    <div class="card${unread?' unread':''}" onclick="openDetail(${i})">
+      ${unread?'<span class="new-dot"></span>':''}
       <span class="cat">${d.cat}</span><span class="tier">${d.tier}</span>
       <h3>${d.has_voice?'🎙️ ':''}${d.title}</h3>
       <div class="sub">${d.sub}${d.has_voice?' · голосовий':''}</div>
@@ -220,6 +236,11 @@ function openDetail(i){
   curItem=curList[i];
   const d=curItem;
   const mine = isMine(d);
+  if(isUnread(d)){
+    markSeen(d.id);
+    const cardEl = document.querySelectorAll('#feed-list .card')[i];
+    if(cardEl){ cardEl.classList.remove('unread'); const dot=cardEl.querySelector('.new-dot'); if(dot) dot.remove(); }
+  }
   document.getElementById('d-cat').className='card cat';
   document.getElementById('d-cat').outerHTML=`<span class="cat" id="d-cat">${d.cat}</span>`;
   document.getElementById('d-title').textContent=d.title;
