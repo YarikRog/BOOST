@@ -119,7 +119,14 @@ export class UsersService {
       .insert({ name: storeName, region_id: (region as { id: string }).id })
       .select('id')
       .single();
-    if (storeErr) throw storeErr;
+    if (storeErr) {
+      // Lost the race against a concurrent create (uniq_stores_name_lower).
+      if (storeErr.code === '23505') {
+        await this.supabase.db.from('regions').delete().eq('id', (region as { id: string }).id);
+        throw new BadRequestException(`Магазин «${storeName}» вже існує. Обери іншу назву.`);
+      }
+      throw storeErr;
+    }
 
     return { storeId: (store as { id: string }).id };
   }
@@ -192,7 +199,13 @@ export class UsersService {
         .insert({ name: storeName, region_id: user.region_id, director_id: userId })
         .select('id')
         .single();
-      if (storeErr) throw storeErr;
+      if (storeErr) {
+        // Lost the race against a concurrent create (uniq_stores_name_lower).
+        if (storeErr.code === '23505') {
+          throw new BadRequestException(`Магазин «${storeName}» вже існує. Обери іншу назву.`);
+        }
+        throw storeErr;
+      }
       storeId = (store as { id: string }).id;
     }
 
@@ -304,16 +317,27 @@ export class UsersService {
       .order('created_at', { ascending: true });
     if (error) throw error;
 
-    const result = [];
-    for (const store of stores ?? []) {
-      const { count, error: cntErr } = await this.supabase.db
-        .from('users')
-        .select('id', { count: 'exact', head: true })
-        .eq('store_id', store.id);
-      if (cntErr) throw cntErr;
-      result.push({ id: store.id as string, name: store.name as string, userCount: count ?? 0 });
-    }
-    return result;
+    const counts = await this.userCountsBy('store_id');
+    return (stores ?? []).map((s) => ({
+      id: s.id as string,
+      name: s.name as string,
+      userCount: counts.get(s.id as string) ?? 0,
+    }));
+  }
+
+  /**
+   * User counts grouped by store or region, in one query instead of one per
+   * row. Only ids are fetched, so the payload stays small even at scale.
+   */
+  private async userCountsBy(column: 'store_id' | 'region_id'): Promise<Map<string, number>> {
+    const { data, error } = await this.supabase.db.from('users').select(column);
+    if (error) throw error;
+    const counts = new Map<string, number>();
+    (data ?? []).forEach((row) => {
+      const key = (row as Record<string, string | null>)[column];
+      if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
+    });
+    return counts;
   }
 
   /**
@@ -534,20 +558,12 @@ export class UsersService {
       .order('name', { ascending: true });
     if (regErr) throw regErr;
 
-    const result = [];
-    for (const region of regions ?? []) {
-      const { count, error: cntErr } = await this.supabase.db
-        .from('users')
-        .select('id', { count: 'exact', head: true })
-        .eq('region_id', region.id);
-      if (cntErr) throw cntErr;
-      result.push({
-        id: region.id,
-        name: region.name,
-        userCount: count ?? 0,
-      });
-    }
-    return result;
+    const counts = await this.userCountsBy('region_id');
+    return (regions ?? []).map((r) => ({
+      id: r.id as string,
+      name: r.name as string,
+      userCount: counts.get(r.id as string) ?? 0,
+    }));
   }
 
   /**

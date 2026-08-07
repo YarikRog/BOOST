@@ -63,14 +63,38 @@ export class ReminderWorker {
         ]);
         const telegramId = (user as { telegram_id: number } | null)?.telegram_id;
         const title = (lh as { title: string } | null)?.title ?? 'кейс';
-        if (telegramId) {
-          await this.bot.sendResultPrompt(telegramId, wi.id as string, title);
+
+        const sent = telegramId
+          ? await this.bot.sendResultPrompt(telegramId, wi.id as string, title)
+          : false;
+
+        if (sent) {
+          this.logger.debug(`Check prompt sent for work_item ${wi.id}`);
+        } else {
+          // Telegram was down / rate-limited / the user has no chat: release the
+          // claim so the next sweep retries. Claiming before sending is what
+          // prevents double-sends; releasing on failure is what prevents loss.
+          await this.releaseClaim(wi.id as string);
         }
-        this.logger.debug(`Check prompt sent for work_item ${wi.id}`);
       } catch (e) {
         this.logger.error(`Reminder for ${wi.id} failed: ${(e as Error).message}`);
+        await this.releaseClaim(wi.id as string);
       }
     }
     this.logger.log(`Reminder sweep processed ${data.length} work item(s)`);
+  }
+
+  /** Undo a claim so a failed prompt is retried on the next sweep. */
+  private async releaseClaim(workItemId: string): Promise<void> {
+    const { error } = await this.supabase.db
+      .from('work_items')
+      .update({ check_sent: false })
+      .eq('id', workItemId)
+      .eq('status', WorkItemStatus.in_work);
+    if (error) {
+      // Worst case the prompt is not retried — loud, because it means a user
+      // silently never gets asked for their result.
+      this.logger.error(`Failed to release claim on ${workItemId}: ${error.message}`);
+    }
   }
 }

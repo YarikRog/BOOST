@@ -219,11 +219,21 @@ Flow: `UI action → API → domain event → worker → DB update → feed/scor
 ## 7. Feed engine (per category — Product Logic §7)
 
 ```
-Stage 1 (<~200/category): 90% newest, 10% random
-Stage 2 (~200–1000):      40% new, 40% popular (by quality_score, else recency), 20% random
-Stage 3 (1000+):          quality_score ranking (recency decay already inside it)
+Stage 1 (<5 confirmed/category):   90% newest,  10% exploration
+Stage 2 (5–19 confirmed):          40% newest,  40% quality, 20% exploration
+Stage 3 (20+ confirmed):           20% newest,  60% quality, 20% exploration
 ```
-Stage is evaluated per category independently. Newcomers (`lt_6m`) are biased toward higher-tier items; experienced users see the full base.
+Stage is evaluated per category independently, and the threshold counts
+**confirmed** cases (≥1 scored outcome), not published ones. Quality ranking is
+meaningless without confirmation data, so volume alone must not advance a stage —
+a category with 500 unconfirmed cases has no evidence to rank on.
+
+Exploration items are spliced into random positions rather than appended, since
+an item parked at the bottom of the feed is never seen. Ordering is seeded per
+cache window so it stays stable while a feed response is cached.
+
+Not yet implemented: newcomer (`lt_6m`) tier bias. `audience` is threaded through
+the API and cache key, but currently both audiences receive the same ranking.
 
 ## 8. Bot & WebApp (both thin)
 

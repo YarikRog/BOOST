@@ -4,11 +4,19 @@ import { randomUUID } from 'crypto';
 import { SupabaseService } from '../integrations/supabase.client';
 import { RedisService } from '../integrations/redis.client';
 import { ScoringService } from './scoring.service';
-import { Experience, LifehackStatus, WorkItemStatus } from '../common/enums';
+import { RankingService } from './ranking.service';
+import { Experience, LifehackStatus, SCORED_OUTCOMES, WorkItemStatus } from '../common/enums';
 import { UserRow } from './users.service';
 import { BotService } from '../bot/bot.service';
 
 type Audience = 'newcomer' | 'experienced';
+
+/** Whole days between an ISO timestamp and now; null passes through. */
+function daysSince(iso: string | null): number | null {
+  if (!iso) return null;
+  const ms = Date.now() - new Date(iso).getTime();
+  return Math.max(0, ms / 86_400_000);
+}
 
 export interface CreateLifehackInput {
   categorySlug: string;
@@ -23,10 +31,14 @@ export interface CreateLifehackInput {
  */
 @Injectable()
 export class LifehacksService {
+  private static readonly VOICE_BUCKET = 'voice-cases';
+  private static readonly VOICE_URL_TTL_SECONDS = 3600;
+
   constructor(
     private readonly supabase: SupabaseService,
     private readonly redis: RedisService,
     private readonly scoring: ScoringService,
+    private readonly ranking: RankingService,
     private readonly config: ConfigService,
     @Inject(forwardRef(() => BotService))
     private readonly bot: BotService,
@@ -90,20 +102,31 @@ export class LifehacksService {
   private async uploadVoice(fileId: string): Promise<string | null> {
     const buffer = await this.downloadTelegramFile(fileId);
     if (!buffer) return null;
-    const bucket = 'voice-cases';
     try {
-      // Ensure the bucket exists (ignored if it already does).
-      await this.supabase.db.storage.createBucket(bucket, { public: true });
+      // Ensure the bucket exists (ignored if it already does). PRIVATE: these
+      // are internal recordings, so access always goes through a signed URL
+      // minted for an authenticated feed request — never a guessable public URL.
+      await this.supabase.db.storage.createBucket(LifehacksService.VOICE_BUCKET, { public: false });
     } catch {
       /* already exists */
     }
     const path = `${randomUUID()}.ogg`;
     const { error } = await this.supabase.db.storage
-      .from(bucket)
+      .from(LifehacksService.VOICE_BUCKET)
       .upload(path, buffer, { contentType: 'audio/ogg', upsert: false });
     if (error) return null;
-    const { data } = this.supabase.db.storage.from(bucket).getPublicUrl(path);
-    return data.publicUrl ?? null;
+    // Store the object path, not a URL — signed URLs expire, so they are minted
+    // per request in the feed rather than persisted.
+    return path;
+  }
+
+  /** Mint a short-lived signed URL for a stored voice object. */
+  private async signVoiceUrl(path: string): Promise<string | null> {
+    const { data, error } = await this.supabase.db.storage
+      .from(LifehacksService.VOICE_BUCKET)
+      .createSignedUrl(path, LifehacksService.VOICE_URL_TTL_SECONDS);
+    if (error) return null;
+    return data?.signedUrl ?? null;
   }
 
   /**
@@ -193,23 +216,38 @@ export class LifehacksService {
     return (data as { lifehack_id: string; type: string }[]) ?? [];
   }
 
-  /** Delete a lifehack (author or admin). Cleans dependent rows first. */
+  /**
+   * Archive a lifehack (author or admin) — it leaves the feed but the row and
+   * everything referencing it survive. Hard delete would destroy other people's
+   * work items and reactions, i.e. the outcome history the whole scoring model
+   * is built on (PRODUCT_LOGIC §3: archived is never hard-deleted).
+   */
   async remove(userId: string, isAdmin: boolean, lifehackId: string): Promise<{ ok: true }> {
     const { data: lh } = await this.supabase.db
       .from('lifehacks')
-      .select('author_id, category_id')
+      .select('author_id, category_id, status')
       .eq('id', lifehackId)
       .maybeSingle();
     if (!lh) throw new BadRequestException('Кейс не знайдено.');
-    const row = lh as { author_id: string; category_id: string };
+    const row = lh as { author_id: string; category_id: string; status: LifehackStatus };
     if (row.author_id !== userId && !isAdmin) {
       throw new ForbiddenException('Можна видаляти лише власний кейс.');
     }
+    if (row.status === LifehackStatus.archived) return { ok: true };
 
-    await this.supabase.db.from('reactions').delete().eq('lifehack_id', lifehackId);
-    await this.supabase.db.from('work_items').delete().eq('lifehack_id', lifehackId);
-    const { error } = await this.supabase.db.from('lifehacks').delete().eq('id', lifehackId);
+    const { error } = await this.supabase.db
+      .from('lifehacks')
+      .update({ status: LifehackStatus.archived })
+      .eq('id', lifehackId);
     if (error) throw error;
+
+    // Free the slot for anyone still holding it — the case is gone from the
+    // feed, so asking them for a result in 7 days would be noise.
+    await this.supabase.db
+      .from('work_items')
+      .update({ status: WorkItemStatus.expired, resolved_at: new Date().toISOString() })
+      .eq('lifehack_id', lifehackId)
+      .eq('status', WorkItemStatus.in_work);
 
     await this.redis.invalidateFeed(row.category_id);
     return { ok: true };
@@ -233,8 +271,8 @@ export class LifehacksService {
     // of the Telegram file_id lifecycle. Keep file_id as a fallback.
     const content = { ...(input.content ?? {}) } as Record<string, unknown>;
     if (content.voice_file_id) {
-      const url = await this.uploadVoice(content.voice_file_id as string);
-      if (url) content.voice_url = url;
+      const path = await this.uploadVoice(content.voice_file_id as string);
+      if (path) content.voice_path = path;
     }
 
     const nowIso = new Date().toISOString();
@@ -272,12 +310,16 @@ export class LifehacksService {
     return this.feed((cat as { id: string }).id, audience);
   }
 
-  /** GET /lifehacks/feed?categoryId= — cached by category+audience (STACK.md §4). */
+  /**
+   * GET /lifehacks/feed?categoryId= — cached by category+audience (STACK.md §4).
+   * Scoring and tier are computed here and shipped ready-to-render: the WebApp
+   * must never recompute business values (TECH_ARCHITECTURE §4).
+   */
   async feed(categoryId: string, audience: Audience): Promise<unknown[]> {
+    if (!categoryId) return [];
     const cached = await this.redis.getFeed(categoryId, audience);
     if (cached) return JSON.parse(cached);
 
-    // TODO: staged ranking (Stage 1/2/3, per category). Skeleton: newest first.
     const { data, error } = await this.supabase.db
       .from('lifehacks')
       .select('id, title, category_id, product_type, content_json, author_id, created_at')
@@ -292,64 +334,124 @@ export class LifehacksService {
       return [];
     }
 
-    // Batch-enrich (no N+1): one query for authors, one for all work-items.
+    // Batch-enrich (no N+1): one query each for authors, work-items, reactions.
     const authorIds = [...new Set(rows.map((r) => r.author_id as string))];
     const lifehackIds = rows.map((r) => r.id as string);
 
     const [{ data: users }, { data: wis }, { data: reacts }] = await Promise.all([
       this.supabase.db.from('users').select('id, name, status').in('id', authorIds),
-      this.supabase.db.from('work_items').select('lifehack_id, status').in('lifehack_id', lifehackIds),
-      this.supabase.db.from('reactions').select('lifehack_id, type').in('lifehack_id', lifehackIds),
+      // resolved_at drives the recency factor — without it recency is always 0.
+      this.supabase.db
+        .from('work_items')
+        .select('lifehack_id, status, resolved_at')
+        .in('lifehack_id', lifehackIds),
+      // is_cross_store is the frozen snapshot that weights each reaction.
+      this.supabase.db
+        .from('reactions')
+        .select('lifehack_id, type, is_cross_store')
+        .in('lifehack_id', lifehackIds),
     ]);
 
-    const reByLh = new Map<string, { likes: number; dislikes: number }>();
+    const reByLh = new Map<
+      string,
+      { likes: number; dislikes: number; weightedLikes: number; weightedDislikes: number }
+    >();
     (reacts ?? []).forEach((r) => {
-      const e = reByLh.get(r.lifehack_id as string) ?? { likes: 0, dislikes: 0 };
-      if (r.type === 'like') e.likes++;
-      else e.dislikes++;
-      reByLh.set(r.lifehack_id as string, e);
+      const key = r.lifehack_id as string;
+      const e = reByLh.get(key) ?? { likes: 0, dislikes: 0, weightedLikes: 0, weightedDislikes: 0 };
+      const w = ScoringService.reactionWeight(r.is_cross_store as boolean);
+      if (r.type === 'like') {
+        e.likes++;
+        e.weightedLikes += w;
+      } else {
+        e.dislikes++;
+        e.weightedDislikes += w;
+      }
+      reByLh.set(key, e);
     });
 
     const userById = new Map(
       (users ?? []).map((u) => [u.id as string, u as { name: string | null; status: string }]),
     );
     const statusesByLh = new Map<string, WorkItemStatus[]>();
+    const lastConfirmedByLh = new Map<string, string>();
     (wis ?? []).forEach((w) => {
-      const arr = statusesByLh.get(w.lifehack_id as string) ?? [];
-      arr.push(w.status as WorkItemStatus);
-      statusesByLh.set(w.lifehack_id as string, arr);
+      const key = w.lifehack_id as string;
+      const status = w.status as WorkItemStatus;
+      const arr = statusesByLh.get(key) ?? [];
+      arr.push(status);
+      statusesByLh.set(key, arr);
+      // Only scored outcomes count as a "confirmation" for recency purposes.
+      const resolvedAt = w.resolved_at as string | null;
+      if (resolvedAt && SCORED_OUTCOMES.includes(status as (typeof SCORED_OUTCOMES)[number])) {
+        const prev = lastConfirmedByLh.get(key);
+        if (!prev || resolvedAt > prev) lastConfirmedByLh.set(key, resolvedAt);
+      }
     });
 
-    const feed = rows.map((r) => {
-      const u = userById.get(r.author_id as string);
-      const author = !u
-        ? 'Архівний автор'
-        : u.status === 'archived'
-          ? 'Колишній співробітник'
-          : u.name || 'Продавець';
-      const c = ScoringService.tallyOutcomes(statusesByLh.get(r.id as string) ?? []);
-      const tried = c.success + c.partial + c.fail;
-      const ok = c.success;
-      const content = (r.content_json ?? {}) as Record<string, unknown>;
-      const re = reByLh.get(r.id as string) ?? { likes: 0, dislikes: 0 };
-      return {
-        id: r.id,
-        title: r.title,
-        product_type: r.product_type,
-        author,
-        author_id: r.author_id,
-        tried,
-        ok,
-        rate: tried > 0 ? Math.round((ok / tried) * 100) : 0,
-        likes: re.likes,
-        dislikes: re.dislikes,
-        has_voice: !!(content.voice_file_id || content.voice_url),
-        voice_url: content.voice_url ?? null,
-        sit: content.sit ?? '',
-        do: content.do ?? '',
-        why: content.why ?? '',
-      };
-    });
+    const scored = await Promise.all(
+      rows.map(async (r) => {
+        const id = r.id as string;
+        const u = userById.get(r.author_id as string);
+        const author = !u
+          ? 'Архівний автор'
+          : u.status === 'archived'
+            ? 'Колишній співробітник'
+            : u.name || 'Продавець';
+        const counts = ScoringService.tallyOutcomes(statusesByLh.get(id) ?? []);
+        const tried = counts.success + counts.partial + counts.fail;
+        const content = (r.content_json ?? {}) as Record<string, unknown>;
+        const re = reByLh.get(id) ?? {
+          likes: 0,
+          dislikes: 0,
+          weightedLikes: 0,
+          weightedDislikes: 0,
+        };
+
+        const quality = this.scoring.compute({
+          ...counts,
+          weightedLikes: re.weightedLikes,
+          weightedDislikes: re.weightedDislikes,
+          daysSinceLastConfirmation: daysSince(lastConfirmedByLh.get(id) ?? null),
+        });
+
+        // Private bucket: mint a short-lived signed URL. `voice_url` on older
+        // rows is a legacy public URL from before the bucket was locked down.
+        const voicePath = content.voice_path as string | undefined;
+        const voiceUrl = voicePath
+          ? await this.signVoiceUrl(voicePath)
+          : ((content.voice_url as string | undefined) ?? null);
+
+        return {
+          id,
+          createdAt: r.created_at as string,
+          title: r.title,
+          product_type: r.product_type,
+          author,
+          author_id: r.author_id,
+          tried,
+          ok: counts.success,
+          // Plain success share — a display metric, deliberately NOT the
+          // weighted quality score (which also counts partial/fail/recency).
+          rate: tried > 0 ? Math.round((counts.success / tried) * 100) : 0,
+          likes: re.likes,
+          dislikes: re.dislikes,
+          // Backend is the single source of truth for both of these.
+          tier: quality.tier,
+          qualityScore: quality.qualityScore,
+          confirmations: quality.confirmations,
+          has_voice: !!(content.voice_file_id || voicePath || content.voice_url),
+          voice_url: voiceUrl,
+          sit: content.sit ?? '',
+          do: content.do ?? '',
+          why: content.why ?? '',
+        };
+      }),
+    );
+
+    // Seed exploration per cache window so ordering is stable while cached.
+    const seed = Math.floor(Date.now() / (RedisService.FEED_TTL_SECONDS * 1000));
+    const feed = this.ranking.rank(scored, seed);
 
     await this.redis.setFeed(categoryId, audience, JSON.stringify(feed));
     return feed;
@@ -400,12 +502,22 @@ export class LifehacksService {
   async qualityOf(lifehackId: string) {
     const { data, error } = await this.supabase.db
       .from('work_items')
-      .select('status')
+      .select('status, resolved_at')
       .eq('lifehack_id', lifehackId);
     if (error) throw error;
 
     const statuses = (data ?? []).map((r) => r.status as WorkItemStatus);
     const counts = ScoringService.tallyOutcomes(statuses);
+
+    // Most recent scored confirmation drives the recency factor.
+    let lastConfirmedAt: string | null = null;
+    (data ?? []).forEach((r) => {
+      const status = r.status as WorkItemStatus;
+      const resolvedAt = r.resolved_at as string | null;
+      if (resolvedAt && SCORED_OUTCOMES.includes(status as (typeof SCORED_OUTCOMES)[number])) {
+        if (!lastConfirmedAt || resolvedAt > lastConfirmedAt) lastConfirmedAt = resolvedAt;
+      }
+    });
 
     // Fold reaction weights from the frozen cross-store snapshot.
     const { data: reacts } = await this.supabase.db
@@ -424,7 +536,7 @@ export class LifehacksService {
       ...counts,
       weightedLikes,
       weightedDislikes,
-      daysSinceLastConfirmation: null,
+      daysSinceLastConfirmation: daysSince(lastConfirmedAt),
     });
   }
 }

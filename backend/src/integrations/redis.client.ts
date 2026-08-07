@@ -13,6 +13,9 @@ import Redis from 'ioredis';
  */
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
+  /** Feed cache lifetime; also the window that keeps feed ordering stable. */
+  static readonly FEED_TTL_SECONDS = 180;
+
   private readonly logger = new Logger(RedisService.name);
   private redis!: Redis;
 
@@ -55,7 +58,12 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.redis.get(`feed:${category}:${audience}`);
   }
 
-  async setFeed(category: string, audience: string, json: string, ttlSeconds = 180): Promise<void> {
+  async setFeed(
+    category: string,
+    audience: string,
+    json: string,
+    ttlSeconds = RedisService.FEED_TTL_SECONDS,
+  ): Promise<void> {
     await this.redis.set(`feed:${category}:${audience}`, json, 'EX', ttlSeconds);
   }
 

@@ -57,7 +57,6 @@ function api(path, opts){
   });
 }
 
-function tierOf(tried){ return tried>=10 ? 'TOP' : (tried>0 ? 'GROWING' : 'NEW'); }
 function isMine(item){ return LIVE && me && item && item.author_id === me.id; }
 
 let myReacts = {}; // lifehack_id → 'like' | 'dislike'
@@ -76,9 +75,11 @@ function markSeen(id){
   localStorage.setItem(SEEN_KEY, JSON.stringify(arr));
 }
 
+// Tier and quality come from the backend — never recomputed here, or the UI
+// and the ranking engine would disagree about what a case is worth.
 function normLive(x, catName){
   return {
-    id:x.id, author_id:x.author_id, cat:catName, tier:tierOf(x.tried||0), title:x.title,
+    id:x.id, author_id:x.author_id, cat:catName, tier:x.tier||'NEW', title:x.title,
     sub:x.product_type||'', rate:x.rate||0, tried:x.tried||0, ok:x.ok||0,
     author:x.author||'Продавець', sit:x.sit||'', do:x.do||'', why:x.why||'', has_voice:!!x.has_voice,
     voice_url:x.voice_url||null, likes:x.likes||0, dislikes:x.dislikes||0
@@ -194,7 +195,7 @@ function renderFeed(dir){
       <div class="proof">
         <div class="big">${d.rate}%</div>
         <div class="bar"><i style="width:${d.rate}%"></i></div>
-        <div class="txt">спрацювало<br>${d.ok} з ${d.tried} підтвердили</div>
+        <div class="txt">успішних спроб<br>${d.ok} з ${d.tried} підтвердили</div>
       </div>` : `
       <div class="proof" style="background:var(--chip)">
         <div class="txt" style="color:var(--muted)">Новий кейс — ще немає підтверджень. Будь першим, хто спробує.</div>
@@ -245,7 +246,7 @@ function openDetail(i){
   document.getElementById('d-cat').outerHTML=`<span class="cat" id="d-cat">${d.cat}</span>`;
   document.getElementById('d-title').textContent=d.title;
   document.getElementById('d-proof').innerHTML = d.tried>0
-    ? `<div class="big">${d.rate}%</div><div class="bar"><i style="width:${d.rate}%"></i></div><div class="txt">спрацювало · ${d.ok} з ${d.tried} підтвердили</div>`
+    ? `<div class="big">${d.rate}%</div><div class="bar"><i style="width:${d.rate}%"></i></div><div class="txt">успішних спроб · ${d.ok} з ${d.tried} підтвердили</div>`
     : `<div class="txt" style="color:var(--muted)">Новий кейс — ще немає підтверджень</div>`;
   document.getElementById('d-proof').style.background = d.tried>0 ? 'var(--good-soft)' : 'var(--chip)';
   const doText = d.has_voice ? '🎧 Голосовий кейс — послухай запис вище.' : d.do;
@@ -261,7 +262,10 @@ function openDetail(i){
   const audio=document.getElementById('d-audio');
   if(LIVE && d.has_voice && d.id){
     // Prefer our own storage copy; fall back to streaming via the backend.
-    audio.src = d.voice_url || (API + '/lifehacks/' + encodeURIComponent(d.id) + '/voice');
+    // The fallback stream is authenticated too; <audio> can't set headers, so
+    // initData rides along as a query param and is HMAC-verified server-side.
+    audio.src = d.voice_url ||
+      (API + '/lifehacks/' + encodeURIComponent(d.id) + '/voice?initData=' + encodeURIComponent(initData));
     audio.classList.remove('hidden');
   } else {
     audio.classList.add('hidden'); audio.removeAttribute('src');

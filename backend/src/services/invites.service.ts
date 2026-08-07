@@ -103,46 +103,32 @@ export class InvitesService {
     token: string,
     telegram: { id: number; name?: string },
   ): Promise<{ user: UserRow; needsStoreCreation: boolean }> {
-    const existing = await this.users.findByTelegramId(telegram.id);
-    if (existing) {
-      // already onboarded — idempotent re-entry
-      return {
-        user: existing,
-        needsStoreCreation: existing.role === UserRole.DIRECTOR && !existing.store_id,
-      };
-    }
-
-    const { data: invite, error } = await this.supabase.db
-      .from('invites')
-      .select('*')
-      .eq('token', token)
-      .maybeSingle();
-    if (error) throw error;
-    if (!invite) throw new NotFoundException('Invite not found.');
-    if (invite.status !== InviteStatus.active) throw new BadRequestException('Invite already used or revoked.');
-    if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
-      throw new BadRequestException('Invite expired.');
-    }
-
-    const user = await this.users.create({
-      telegramId: telegram.id,
-      name: telegram.name,
-      role: invite.role,
-      regionId: invite.region_id,
-      storeId: invite.store_id,
+    // Claim + create in one database call (migration 0004). Doing it in separate
+    // round-trips let two concurrent /start calls with the same token each
+    // create a user while only one claimed the invite.
+    const { data, error } = await this.supabase.db.rpc('consume_invite', {
+      p_token: token,
+      p_telegram_id: telegram.id,
+      p_name: telegram.name ?? null,
     });
 
-    // single-use guard: only the row still 'active' is claimed
-    const { data: claimed, error: claimErr } = await this.supabase.db
-      .from('invites')
-      .update({ status: InviteStatus.used, used_by: user.id })
-      .eq('id', invite.id)
-      .eq('status', InviteStatus.active)
-      .select('id');
-    if (claimErr) throw claimErr;
-    if (!claimed?.length) throw new BadRequestException('Invite was just consumed by someone else.');
+    if (error) {
+      if (error.message.includes('INVITE_NOT_FOUND')) {
+        throw new NotFoundException('Invite not found.');
+      }
+      if (error.message.includes('INVITE_NOT_ACTIVE')) {
+        throw new BadRequestException('Invite already used, revoked or expired.');
+      }
+      throw error;
+    }
 
-    return { user, needsStoreCreation: invite.role === UserRole.DIRECTOR };
+    const user = (Array.isArray(data) ? data[0] : data) as UserRow;
+    if (!user) throw new BadRequestException('Invite could not be consumed.');
+
+    return {
+      user,
+      needsStoreCreation: user.role === UserRole.DIRECTOR && !user.store_id,
+    };
   }
 
   /**

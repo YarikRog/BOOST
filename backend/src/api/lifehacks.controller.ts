@@ -1,32 +1,23 @@
-import { Body, Controller, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { LifehacksService } from '../services/lifehacks.service';
 import { TelegramInitDataGuard, AuthedRequest } from '../auth/telegram-initdata.guard';
-
-interface CreateBody {
-  categorySlug: string;
-  productType?: string;
-  title: string;
-  content?: Record<string, unknown>;
-}
-
-interface VoiceIntentBody {
-  categorySlug: string;
-  productType?: string;
-}
-
-interface ReactBody {
-  type: 'like' | 'dislike';
-}
+import { TelegramAuthService } from '../auth/telegram-auth.service';
+import { UsersService } from '../services/users.service';
+import { CreateLifehackDto, FeedQueryDto, ReactDto, VoiceIntentDto } from './dto';
 
 @Controller('lifehacks')
 export class LifehacksController {
-  constructor(private readonly lifehacks: LifehacksService) {}
+  constructor(
+    private readonly lifehacks: LifehacksService,
+    private readonly auth: TelegramAuthService,
+    private readonly users: UsersService,
+  ) {}
 
   // POST /lifehacks — create + publish (WebApp create flow). Auth via initData.
   @Post()
   @UseGuards(TelegramInitDataGuard)
-  create(@Body() body: CreateBody, @Req() req: AuthedRequest) {
+  create(@Body() body: CreateLifehackDto, @Req() req: AuthedRequest) {
     return this.lifehacks.create(req.appUser, {
       categorySlug: body.categorySlug,
       productType: body.productType ?? '',
@@ -38,17 +29,17 @@ export class LifehacksController {
   // POST /lifehacks/voice-intent — remember chosen category before recording.
   @Post('voice-intent')
   @UseGuards(TelegramInitDataGuard)
-  voiceIntent(@Body() body: VoiceIntentBody, @Req() req: AuthedRequest) {
+  voiceIntent(@Body() body: VoiceIntentDto, @Req() req: AuthedRequest) {
     return this.lifehacks.setVoiceIntent(req.appUser.telegram_id, {
       categorySlug: body.categorySlug,
       productType: body.productType ?? '',
     });
   }
 
-  // POST /lifehacks/:id/delete — author or admin removes a case.
+  // POST /lifehacks/:id/delete — author or admin archives a case.
   @Post(':id/delete')
   @UseGuards(TelegramInitDataGuard)
-  remove(@Param('id') id: string, @Req() req: AuthedRequest) {
+  remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthedRequest) {
     const isAdmin =
       req.appUser.role === 'MEGA_ADMIN' || req.appUser.role === 'REGIONAL_IT_LEAD';
     return this.lifehacks.remove(req.appUser.id, isAdmin, id);
@@ -57,7 +48,7 @@ export class LifehacksController {
   // POST /lifehacks/:id/react — toggle like/dislike.
   @Post(':id/react')
   @UseGuards(TelegramInitDataGuard)
-  react(@Param('id') id: string, @Body() body: ReactBody, @Req() req: AuthedRequest) {
+  react(@Param('id', ParseUUIDPipe) id: string, @Body() body: ReactDto, @Req() req: AuthedRequest) {
     return this.lifehacks.react(req.appUser, id, body.type);
   }
 
@@ -75,34 +66,60 @@ export class LifehacksController {
     return this.lifehacks.authorStats(req.appUser.id);
   }
 
-  // GET /lifehacks/feed?categorySlug=|categoryId=&audience=
+  // GET /lifehacks/feed?categorySlug=|categoryId=
+  // Audience is derived from the authenticated user's experience segment — it is
+  // a ranking input, so it must never be client-supplied.
   @Get('feed')
-  feed(
-    @Query('categoryId') categoryId: string,
-    @Query('categorySlug') categorySlug: string,
-    @Query('audience') audience: 'newcomer' | 'experienced' = 'experienced',
-  ) {
-    if (categorySlug) return this.lifehacks.feedBySlug(categorySlug, audience);
-    return this.lifehacks.feed(categoryId, audience);
+  @UseGuards(TelegramInitDataGuard)
+  feed(@Query() query: FeedQueryDto, @Req() req: AuthedRequest) {
+    const audience = LifehacksService.audienceOf(req.appUser.experience_segment);
+    if (query.categorySlug) return this.lifehacks.feedBySlug(query.categorySlug, audience);
+    return this.lifehacks.feed(query.categoryId ?? '', audience);
   }
 
-  // GET /lifehacks/:id/voice — stream a voice case's audio (public; used by
-  // the WebApp <audio> element which can't send the initData header).
+  /**
+   * GET /lifehacks/:id/voice?initData=... — fallback audio stream for voice
+   * cases whose Storage upload failed. The WebApp `<audio>` element cannot send
+   * custom headers, so initData is accepted as a query param here and verified
+   * with the same HMAC check the guard uses. Never unauthenticated.
+   */
   @Get(':id/voice')
-  async voice(@Param('id') id: string, @Res() res: Response): Promise<void> {
+  async voice(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('initData') initData: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!initData) {
+      res.status(401).send('unauthorized');
+      return;
+    }
+    try {
+      const tgUser = this.auth.validate(initData);
+      const appUser = await this.users.findByTelegramId(tgUser.id);
+      if (!appUser) {
+        res.status(401).send('unauthorized');
+        return;
+      }
+    } catch {
+      res.status(401).send('unauthorized');
+      return;
+    }
+
     const v = await this.lifehacks.voiceBuffer(id);
     if (!v) {
       res.status(404).send('no voice');
       return;
     }
     res.set('Content-Type', v.contentType);
-    res.set('Cache-Control', 'public, max-age=3600');
+    // Per-user authorized content — must not be stored by shared caches.
+    res.set('Cache-Control', 'private, max-age=3600');
     res.send(v.buffer);
   }
 
-  // GET /lifehacks/:id/quality — debug/inspection of the scoring output
+  // GET /lifehacks/:id/quality — scoring breakdown for a case.
   @Get(':id/quality')
-  quality(@Param('id') id: string) {
+  @UseGuards(TelegramInitDataGuard)
+  quality(@Param('id', ParseUUIDPipe) id: string) {
     return this.lifehacks.qualityOf(id);
   }
 }

@@ -1,11 +1,8 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Req, UseGuards } from '@nestjs/common';
 import { WorkItemsService, ResolveOutcome } from '../services/work-items.service';
 import { WorkItemStatus } from '../common/enums';
 import { TelegramInitDataGuard, AuthedRequest } from '../auth/telegram-initdata.guard';
-
-interface ResolveBody {
-  outcome: 'success' | 'partial' | 'fail' | 'not_tried';
-}
+import { ResolveWorkItemDto } from './dto';
 
 /**
  * Thin controller — validation + delegation only. The user is resolved from the
@@ -18,14 +15,18 @@ export class WorkItemsController {
   // POST /lifehacks/:id/take
   @Post('lifehacks/:id/take')
   @UseGuards(TelegramInitDataGuard)
-  take(@Param('id') lifehackId: string, @Req() req: AuthedRequest) {
+  take(@Param('id', ParseUUIDPipe) lifehackId: string, @Req() req: AuthedRequest) {
     return this.workItems.take(req.appUser.id, lifehackId, req.appUser.telegram_id);
   }
 
   // POST /work-items/:id/result
   @Post('work-items/:id/result')
   @UseGuards(TelegramInitDataGuard)
-  resolve(@Param('id') workItemId: string, @Body() body: ResolveBody, @Req() req: AuthedRequest) {
+  resolve(
+    @Param('id', ParseUUIDPipe) workItemId: string,
+    @Body() body: ResolveWorkItemDto,
+    @Req() req: AuthedRequest,
+  ) {
     const outcome = WorkItemStatus[body.outcome] as ResolveOutcome;
     return this.workItems.resolve(req.appUser.id, workItemId, outcome);
   }

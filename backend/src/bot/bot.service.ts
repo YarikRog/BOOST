@@ -157,8 +157,8 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
 
   /** 7-day check: ask the taker if the case worked, with resolve buttons. */
 
-  async sendResultPrompt(telegramId: number, workItemId: string, title: string): Promise<void> {
-    if (!this.bot) return;
+  async sendResultPrompt(telegramId: number, workItemId: string, title: string): Promise<boolean> {
+    if (!this.bot) return false;
     const kb = new InlineKeyboard()
       .text('🔥 Так, продав', `wres:${workItemId}:success`)
       .row()
@@ -172,8 +172,12 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
         `⏰ Ти брав кейс «${title}» у роботу 7 днів тому. Спрацювало?`,
         { reply_markup: kb },
       );
+      return true;
     } catch (e) {
+      // Reported, not swallowed: the caller releases its claim so the next
+      // sweep retries instead of the prompt being silently lost.
       this.logger.error(`sendResultPrompt to ${telegramId} failed: ${(e as Error).message}`);
+      return false;
     }
   }
 
