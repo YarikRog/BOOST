@@ -5,9 +5,13 @@ import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import { BotService } from './bot/bot.service';
 import { TelegramAlertFilter } from './common/telegram-alert.filter';
+import { TelegramLogger } from './common/telegram-logger';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  // Installed before anything else so startup failures are logged through it
+  // too; the Telegram sink is attached below, once BotService exists.
+  const logger = new TelegramLogger();
+  const app = await NestFactory.create(AppModule, { logger });
   // WebApp (GitHub Pages) is a different origin than this API (Railway).
   // initData in a header is the auth, so a permissive CORS origin is fine.
   app.enableCors({
@@ -19,6 +23,9 @@ async function bootstrap(): Promise<void> {
 
   const httpAdapterHost = app.get(HttpAdapterHost);
   const botService = app.get(BotService);
+  // From here on, every logger.error() in the app also reaches the admin's
+  // Telegram (deduplicated and rate-capped inside TelegramLogger).
+  logger.attachSink(botService);
   app.useGlobalFilters(new TelegramAlertFilter(httpAdapterHost, botService));
 
   // Anything that escapes Nest entirely (bad async code, a crashed worker,
