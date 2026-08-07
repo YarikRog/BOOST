@@ -61,15 +61,24 @@ $$;
 -- Store creation did a case-insensitive SELECT then INSERT; two concurrent
 -- requests could both find nothing and both insert. The constraint makes the
 -- database the arbiter instead of the race.
--- Deduplicate any existing collisions first, keeping the oldest row.
-with ranked as (
-  select id, row_number() over (partition by lower(name) order by created_at, id) as rn
-    from stores
-)
-update stores s
-   set name = s.name || ' (' || left(s.id::text, 4) || ')'
-  from ranked r
- where s.id = r.id and r.rn > 1;
+-- Refuse to run if duplicates already exist. Auto-renaming them would silently
+-- rewrite a real store's name behind an admin's back, and the store name is
+-- what people recognise in /stores and invite links — a wrong one is worse than
+-- a failed migration. Resolve conflicts manually, then re-run.
+do $$
+declare
+  v_conflicts text;
+begin
+  select string_agg(format('%s (%s occurrences)', lower(name), cnt), ', ')
+    into v_conflicts
+    from (select name, count(*) as cnt from stores group by lower(name), name having count(*) > 1) d;
+
+  if v_conflicts is not null then
+    raise exception
+      'Duplicate store names block uniq_stores_name_lower: %. Rename or delete them, then re-run.',
+      v_conflicts;
+  end if;
+end $$;
 
 create unique index if not exists uniq_stores_name_lower on stores (lower(name));
 

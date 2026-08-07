@@ -54,45 +54,51 @@ export class RankingService {
       return b.createdAt.localeCompare(a.createdAt);
     });
 
-    const quotas =
-      stage === 1
-        ? { newest: 0.9, quality: 0.0 }
-        : stage === 2
-          ? { newest: 0.4, quality: 0.4 }
-          : { newest: 0.2, quality: 0.6 };
+    const rng = this.rng(seed);
+    const exploration = this.shuffle([...items], rng);
 
-    const total = items.length;
-    const nNewest = Math.round(total * quotas.newest);
-    const nQuality = Math.round(total * quotas.quality);
+    // Weights per stage: newest / quality / exploration.
+    const weights =
+      stage === 1
+        ? { newest: 0.9, quality: 0.0, exploration: 0.1 }
+        : stage === 2
+          ? { newest: 0.4, quality: 0.4, exploration: 0.2 }
+          : { newest: 0.2, quality: 0.6, exploration: 0.2 };
+
+    // Interleave the three orderings by weight rather than concatenating them
+    // in blocks. Blocks would make position depend on which quota a slot
+    // belongs to, so stage 3 would still open with the newest items and a
+    // top-scoring case could never lead the feed.
+    const lanes = [
+      { queue: byNewest, weight: weights.newest, credit: 0, cursor: 0 },
+      { queue: byQuality, weight: weights.quality, credit: 0, cursor: 0 },
+      { queue: exploration, weight: weights.exploration, credit: 0, cursor: 0 },
+    ].filter((l) => l.weight > 0);
 
     const picked = new Set<string>();
     const out: T[] = [];
-    const take = (source: T[], n: number): void => {
-      for (const item of source) {
-        if (out.length >= total || n <= 0) break;
-        if (picked.has(item.id)) continue;
-        picked.add(item.id);
-        out.push(item);
-        n--;
+
+    while (out.length < items.length) {
+      for (const lane of lanes) lane.credit += lane.weight;
+
+      // Highest accumulated credit wins the slot; ties resolve by lane order,
+      // which keeps the whole ordering deterministic for a given seed.
+      let chosen = null as (typeof lanes)[number] | null;
+      for (const lane of lanes) {
+        while (lane.cursor < lane.queue.length && picked.has(lane.queue[lane.cursor].id)) {
+          lane.cursor++;
+        }
+        if (lane.cursor >= lane.queue.length) continue;
+        if (!chosen || lane.credit > chosen.credit) chosen = lane;
       }
-    };
+      if (!chosen) break; // every lane exhausted
 
-    take(byNewest, nNewest);
-    take(byQuality, nQuality);
-
-    const rng = this.rng(seed);
-
-    // Everything neither quota claimed is the exploration pool. These are
-    // spliced into random positions rather than appended, because an item
-    // parked at the bottom of the feed is never seen — which would make
-    // exploration decorative.
-    const exploration = this.shuffle(
-      items.filter((i) => !picked.has(i.id)),
-      rng,
-    );
-    for (const item of exploration) {
-      out.splice(rng() % (out.length + 1), 0, item);
+      chosen.credit -= 1;
+      const item = chosen.queue[chosen.cursor++];
+      picked.add(item.id);
+      out.push(item);
     }
+
     return out;
   }
 

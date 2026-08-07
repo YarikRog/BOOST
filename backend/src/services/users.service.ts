@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../integrations/supabase.client';
-import { Experience, UserRole, UserStatus } from '../common/enums';
+import { Experience, SCORED_OUTCOMES, UserRole, UserStatus } from '../common/enums';
 
 export interface UserRow {
   id: string;
@@ -292,6 +292,25 @@ export class UsersService {
     // Reactions/work-items on lifehacks this user authored (from anyone).
     const { data: authored } = await db.from('lifehacks').select('id').eq('author_id', uid);
     const lifehackIds = (authored ?? []).map((r: { id: string }) => r.id);
+
+    // Refuse once colleagues have actually reported results on this user's
+    // cases: those outcomes are other people's work and the evidence the whole
+    // scoring model runs on. Resetting a fresh test account stays easy; wiping
+    // real history has to be a deliberate act, not a side effect of /reset.
+    if (lifehackIds.length) {
+      const { count, error: cntErr } = await db
+        .from('work_items')
+        .select('id', { count: 'exact', head: true })
+        .in('lifehack_id', lifehackIds)
+        .in('status', [...SCORED_OUTCOMES]);
+      if (cntErr) throw cntErr;
+      if ((count ?? 0) > 0) {
+        throw new BadRequestException(
+          `У цього юзера ${count} підтверджених результатів на його кейсах. ` +
+            'Видалення знищить історію колег. Спочатку заархівуй кейси вручну.',
+        );
+      }
+    }
 
     await db.from('reactions').delete().eq('user_id', uid);
     await db.from('work_items').delete().eq('user_id', uid);
