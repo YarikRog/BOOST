@@ -52,6 +52,13 @@ export class LifehacksController {
     return this.lifehacks.react(req.appUser, id, body.type);
   }
 
+  // POST /lifehacks/:id/view — record a unique view, return the new count.
+  @Post(':id/view')
+  @UseGuards(TelegramInitDataGuard)
+  view(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthedRequest) {
+    return this.lifehacks.recordView(req.appUser, id);
+  }
+
   // GET /lifehacks/my-reactions — the current user's reactions.
   @Get('my-reactions')
   @UseGuards(TelegramInitDataGuard)

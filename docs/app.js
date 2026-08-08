@@ -82,7 +82,7 @@ function normLive(x, catName){
     id:x.id, author_id:x.author_id, cat:catName, tier:x.tier||'NEW', title:x.title,
     sub:x.product_type||'', rate:x.rate||0, tried:x.tried||0, ok:x.ok||0,
     author:x.author||'Продавець', sit:x.sit||'', do:x.do||'', why:x.why||'', has_voice:!!x.has_voice,
-    voice_url:x.voice_url||null, likes:x.likes||0, dislikes:x.dislikes||0
+    voice_url:x.voice_url||null, likes:x.likes||0, dislikes:x.dislikes||0, views:x.views||0
   };
 }
 
@@ -237,6 +237,14 @@ function openDetail(i){
   curItem=curList[i];
   const d=curItem;
   const mine = isMine(d);
+  renderViews(d.views, mine);
+  if(LIVE && d.id && !mine){
+    // Recorded server-side and deduplicated per person, so the returned count
+    // already includes this view — no need to wait for the feed cache to expire.
+    api('/lifehacks/'+encodeURIComponent(d.id)+'/view', { method:'POST' })
+      .then(r => { d.views = r.views; if(curItem && curItem.id===d.id) renderViews(r.views, mine); })
+      .catch(()=>{});
+  }
   if(isUnread(d)){
     markSeen(d.id);
     const cardEl = document.querySelectorAll('#feed-list .card')[i];
@@ -291,6 +299,28 @@ function openDetail(i){
     disBtn.onclick = (e)=>reactTo(e, d.id, 'dislike', disBtn);
   }
   show('detail');
+}
+
+// Views are unique per person: N means N colleagues opened it, not N taps.
+function renderViews(n, mine){
+  const el = document.getElementById('d-views');
+  if(!el) return;
+  const count = n || 0;
+  if(count === 0){
+    el.textContent = mine ? 'Твій кейс ще ніхто не відкривав' : 'Ти перший, хто відкрив цей кейс';
+  } else {
+    el.textContent = '👁 Переглянуто ' + count + ' ' + plural(count, 'раз', 'рази', 'разів');
+  }
+}
+
+// Ukrainian needs three forms; "21 раз" and "22 рази" differ, so pick by the
+// last digits rather than by the number itself.
+function plural(n, one, few, many){
+  const mod100 = n % 100, mod10 = n % 10;
+  if(mod100 >= 11 && mod100 <= 14) return many;
+  if(mod10 === 1) return one;
+  if(mod10 >= 2 && mod10 <= 4) return few;
+  return many;
 }
 
 function deleteCase(){

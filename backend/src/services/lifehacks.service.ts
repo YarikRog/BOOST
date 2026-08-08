@@ -207,6 +207,40 @@ export class LifehacksService {
     return { type: result };
   }
 
+  /**
+   * Record that a user opened a case, and return the resulting unique-viewer
+   * count. Idempotent per (case, user): the unique index absorbs repeat opens,
+   * so the number answers "how many people read this", not "how many taps".
+   *
+   * The author's own opens are excluded — otherwise every freshly published
+   * case would immediately read "1 перегляд" and look like someone else had
+   * been there. The count is returned so the detail screen can show a value
+   * that includes the view just recorded, rather than waiting for the feed
+   * cache to expire.
+   */
+  async recordView(user: UserRow, lifehackId: string): Promise<{ views: number }> {
+    const { data: lh } = await this.supabase.db
+      .from('lifehacks')
+      .select('author_id')
+      .eq('id', lifehackId)
+      .maybeSingle();
+    if (!lh) throw new BadRequestException('Кейс не знайдено.');
+
+    if ((lh as { author_id: string }).author_id !== user.id) {
+      // Duplicate opens hit uniq_lifehack_view; that rejection is the expected
+      // path, not an error, so it is ignored rather than surfaced.
+      await this.supabase.db
+        .from('lifehack_views')
+        .insert({ lifehack_id: lifehackId, user_id: user.id });
+    }
+
+    const { count } = await this.supabase.db
+      .from('lifehack_views')
+      .select('id', { count: 'exact', head: true })
+      .eq('lifehack_id', lifehackId);
+    return { views: count ?? 0 };
+  }
+
   /** The current user's reactions (for the WebApp to highlight buttons). */
   async myReactions(userId: string): Promise<{ lifehack_id: string; type: string }[]> {
     const { data } = await this.supabase.db
@@ -338,7 +372,7 @@ export class LifehacksService {
     const authorIds = [...new Set(rows.map((r) => r.author_id as string))];
     const lifehackIds = rows.map((r) => r.id as string);
 
-    const [{ data: users }, { data: wis }, { data: reacts }] = await Promise.all([
+    const [{ data: users }, { data: wis }, { data: reacts }, { data: views }] = await Promise.all([
       this.supabase.db.from('users').select('id, name, status').in('id', authorIds),
       // resolved_at drives the recency factor — without it recency is always 0.
       this.supabase.db
@@ -350,7 +384,14 @@ export class LifehacksService {
         .from('reactions')
         .select('lifehack_id, type, is_cross_store')
         .in('lifehack_id', lifehackIds),
+      this.supabase.db.from('lifehack_views').select('lifehack_id').in('lifehack_id', lifehackIds),
     ]);
+
+    const viewsByLh = new Map<string, number>();
+    (views ?? []).forEach((v) => {
+      const key = v.lifehack_id as string;
+      viewsByLh.set(key, (viewsByLh.get(key) ?? 0) + 1);
+    });
 
     const reByLh = new Map<
       string,
@@ -436,6 +477,7 @@ export class LifehacksService {
           rate: tried > 0 ? Math.round((counts.success / tried) * 100) : 0,
           likes: re.likes,
           dislikes: re.dislikes,
+          views: viewsByLh.get(id) ?? 0,
           // Backend is the single source of truth for both of these.
           tier: quality.tier,
           qualityScore: quality.qualityScore,
