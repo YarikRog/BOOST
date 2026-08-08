@@ -268,8 +268,18 @@ export class BotService implements OnApplicationBootstrap, OnModuleDestroy {
       .start({
         onStart: (info) => this.logger.log(`Bot @${info.username} started (long-polling)`),
       })
-      .catch((err) => {
-        this.logger.error(`Bot failed to start — check TELEGRAM_BOT_TOKEN: ${err.message}`);
+      .catch((err: Error) => {
+        // 409 during a redeploy is expected, not a fault: Railway briefly runs
+        // the old and new containers together, and Telegram allows only one
+        // long-poll per token. The message says "terminated by other getUpdates",
+        // i.e. THIS instance lost the poll — which happens to the container being
+        // replaced, and it is about to be shut down anyway. Alerting on it would
+        // page the admin on every single deploy until they stop reading alerts.
+        if (err.message.includes('409')) {
+          this.logger.warn(`Long-polling handed over to another instance (409) — normal during a redeploy.`);
+          return;
+        }
+        this.logger.error(`Bot failed to start: ${err.message}`);
       });
   }
 
